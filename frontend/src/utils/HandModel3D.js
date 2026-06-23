@@ -1,121 +1,130 @@
 import * as THREE from 'three';
 
 export class HandModel3D {
-  constructor(scene, configRef) {
+  constructor(
+    scene,
+    configRef,
+    color = 0x00ffff
+  ) {
     this.scene = scene;
     this.configRef = configRef;
+
     this.group = new THREE.Group();
     this.scene.add(this.group);
 
-    // ─── JOINTS: single InstancedMesh instead of 21 separate meshes ──────────
-    // Lower segment count (8,8) — at this on-screen size the extra geometry
-    // from (16,16) is invisible but costs real GPU time across 21 instances.
-    this.jointGeo = new THREE.SphereGeometry(0.08, 8, 8);
-    this.jointMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, wireframe: true });
+    // JOINTS - High performance InstancedMesh
+    this.jointGeo = new THREE.SphereGeometry(0.07, 8, 8);
+    this.jointMat = new THREE.MeshBasicMaterial({
+      color: color,
+      wireframe: true,
+      transparent: true,
+      opacity: 0.85
+    });
 
     this.jointCount = 21;
-    this.jointMesh = new THREE.InstancedMesh(this.jointGeo, this.jointMat, this.jointCount);
-    this.jointMesh.frustumCulled = false; // skip per-frame bounding-sphere recompute
+    this.jointMesh = new THREE.InstancedMesh(
+      this.jointGeo,
+      this.jointMat,
+      this.jointCount
+    );
+    this.jointMesh.frustumCulled = false;
     this.group.add(this.jointMesh);
 
     this._dummy = new THREE.Object3D();
 
-    // Smoothed positions we lerp toward each frame, and the raw target
-    // positions computed from the latest landmarks. Reused every frame —
-    // never reallocated.
+    // POSITION BUFFERS
     this.smoothedPositions = [];
     this.targetPositions = [];
+
     for (let i = 0; i < this.jointCount; i++) {
       this.smoothedPositions.push(new THREE.Vector3());
       this.targetPositions.push(new THREE.Vector3());
     }
 
-    // ─── LINES: persistent GPU buffer, overwritten in place each frame ───────
+    // SKELETON CONNECTIONS MAP
     this.connections = [
-      [0, 1], [1, 2], [2, 3], [3, 4],
-      [0, 5], [5, 6], [6, 7], [7, 8],
-      [5, 9], [9, 10], [10, 11], [11, 12],
-      [9, 13], [13, 14], [14, 15], [15, 16],
-      [0, 17], [17, 18], [18, 19], [19, 20],
+      [0, 1], [1, 2], [2, 3], [3, 4],     // Thumb
+      [0, 5], [5, 6], [6, 7], [7, 8],     // Index
+      [5, 9], [9, 10], [10, 11], [11, 12], // Middle
+      [9, 13], [13, 14], [14, 15], [15, 16], // Ring
+      [0, 17], [17, 18], [18, 19], [19, 20], // Pinky
       [13, 17]
     ];
 
     this.linePositionsArray = new Float32Array(this.connections.length * 2 * 3);
+
     this.lineGeometry = new THREE.BufferGeometry();
     this.lineGeometry.setAttribute(
-      'position',
+      "position",
       new THREE.BufferAttribute(this.linePositionsArray, 3)
     );
 
-    const lineMat = new THREE.LineBasicMaterial({ color: 0x00ffff, linewidth: 2 });
-    this.line = new THREE.LineSegments(this.lineGeometry, lineMat);
+    this.lineMaterial = new THREE.LineBasicMaterial({
+      color: color,
+      linewidth: 2
+    });
+
+    this.line = new THREE.LineSegments(this.lineGeometry, this.lineMaterial);
     this.line.frustumCulled = false;
     this.group.add(this.line);
 
-    // Reused output array so update() doesn't allocate a new array every frame
+    // OUTPUT BUFFER FOR COLLISION TRACKING
     this._outputPositions = [];
     for (let i = 0; i < this.jointCount; i++) {
       this._outputPositions.push({ x: 0, y: 0, z: 0 });
     }
 
-    // Smoothing factor: higher = snappier/more jitter, lower = smoother/more lag.
-    // 0.4-0.6 is a good starting range — tune to taste.
-    this.smoothing = 0.5;
+    this.smoothing = 0.25; 
+    
+    this._ndcVector = new THREE.Vector3();
+    this._camPos = new THREE.Vector3();
   }
 
-  update(landmarks, camera) {
-    if (!landmarks || landmarks.length === 0) {
+  update(landmarks, camera, isPhantom = false) {
+    if (!landmarks || landmarks.length === 0 || !camera) {
       this.hideAll();
       return null;
     }
 
     this.group.visible = true;
 
-    // 🌟 ANTI-CLUMPING FALLBACK PROTECTION
-    // Prevents calculations from breaking if the camera values are zero during initial mounting
-    let aspect = 1.333;
-    let cameraY = 0.5;
-    let fov = 50;
-    let distance = 8;
+    // Adjust this base depth value to scale your hand larger/smaller 
+    // to match your camera's physical distance perfectly.
+    const BASE_HAND_DEPTH = 5.8;  
+    const DEPTH_STRENGTH = 2.0;   
 
-    if (camera) {
-      if (camera.aspect && !isNaN(camera.aspect) && camera.aspect !== 0) {
-        aspect = camera.aspect;
-      } else if (window.innerWidth && window.innerHeight) {
-        aspect = window.innerWidth / window.innerHeight;
-      }
-      cameraY = camera.position.y !== undefined ? camera.position.y : 0.5;
-      fov = camera.fov !== undefined ? camera.fov : 50;
-      distance = camera.position.z !== undefined ? camera.position.z : 8;
-    }
-
-    // Calculate exact viewport dimensions visible to the camera perspective
-    const vHeight = 2 * Math.tan((fov * Math.PI) / 360) * distance;
-    const vWidth = vHeight * aspect;
-
+    camera.getWorldPosition(this._camPos);
     const count = Math.min(landmarks.length, this.jointCount);
 
     for (let index = 0; index < count; index++) {
       const lm = landmarks[index];
 
-      // 🌟 TRUE HORIZONTAL MIRRORING:
-      // (0.5 - lm.x) reflects positions to match your CSS-mirrored camera layer
-      const x = (0.5 - lm.x) * vWidth;
+      // Clean alignment mapping based on standard mirrored webcam layouts:
+      // Real Hand: Invert MediaPipe raw X coordinates to match your mirrored UI screen space
+      // Phantom Hand: Use raw X directly, producing a perfect horizontal reflection across the center line
+      let screenX = isPhantom ? lm.x : (1 - lm.x);
+      
+      const ndcX = (screenX * 2) - 1;
+      const ndcY = 1 - (lm.y * 2); // Invert Y because MediaPipe starts at top, WebGL at bottom
 
-      // Map normalized Y cleanly to world viewport heights
-      const y = (0.5 - lm.y) * vHeight + cameraY;
+      // Project precise NDC coordinates through the active camera frustum matrix
+      this._ndcVector.set(ndcX, ndcY, 0.5); 
+      this._ndcVector.unproject(camera);
 
-      // Proportional depth matching coordinates size
-      const z = -lm.z * (vWidth * 0.3);
+      // Extract accurate world direction vector ray running from the camera lens
+      const dir = this._ndcVector.sub(this._camPos).normalize();
+
+      // Extrapolate distance along the vector ray path
+      const targetDistance = BASE_HAND_DEPTH - (lm.z * DEPTH_STRENGTH);
+      
+      const x = this._camPos.x + (dir.x * targetDistance);
+      const y = this._camPos.y + (dir.y * targetDistance);
+      const z = this._camPos.z + (dir.z * targetDistance);
 
       this.targetPositions[index].set(x, y, z);
-
-      // Smooth toward the target instead of snapping — removes per-frame
-      // jitter from raw MediaPipe landmarks without adding noticeable lag.
       this.smoothedPositions[index].lerp(this.targetPositions[index], this.smoothing);
 
       const p = this.smoothedPositions[index];
-
       this._dummy.position.copy(p);
       this._dummy.updateMatrix();
       this.jointMesh.setMatrixAt(index, this._dummy.matrix);
@@ -128,20 +137,21 @@ export class HandModel3D {
 
     this.jointMesh.instanceMatrix.needsUpdate = true;
 
-    // Build the structural lines connecting the joints, writing directly
-    // into the existing typed array — no new allocation, no GPU buffer
-    // re-creation.
+    // Assemble lines
     let i = 0;
     this.connections.forEach(([start, end]) => {
       const pStart = this.smoothedPositions[start];
       const pEnd = this.smoothedPositions[end];
+
       this.linePositionsArray[i++] = pStart.x;
       this.linePositionsArray[i++] = pStart.y;
       this.linePositionsArray[i++] = pStart.z;
+
       this.linePositionsArray[i++] = pEnd.x;
       this.linePositionsArray[i++] = pEnd.y;
       this.linePositionsArray[i++] = pEnd.z;
     });
+
     this.lineGeometry.attributes.position.needsUpdate = true;
     this.line.visible = true;
 
@@ -158,7 +168,8 @@ export class HandModel3D {
     this.scene.remove(this.group);
     this.jointGeo.dispose();
     this.jointMat.dispose();
-    this.jointMesh.dispose();
+    this.lineMaterial.dispose();
     this.lineGeometry.dispose();
+    this.jointMesh.dispose();
   }
 }
