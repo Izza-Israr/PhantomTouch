@@ -41,36 +41,30 @@ function makeTargetMesh(scene) {
 
 /**
  * Spawn BOTH target balls at the same Y, separated symmetrically on X.
- *
- * Ball A  — sits on the REAL hand's side (same side as the healthy arm).
- * Ball B  — sits on the PHANTOM arm's side (opposite / amputated side).
- *
- * The patient moves their real hand toward Ball A; the 3-D phantom arm
- * (mirrored contralaterally) moves toward Ball B simultaneously.
+ * Targets remain completely stable until they are hit.
  */
 function spawnTargetPair(targetA, targetB, configRef) {
-  const r        = configRef.current.targetSpawnRadius || 2.0;
-  const side     = configRef.current.amputationSide    || 'LEFT';
-  // xPhantom: the side where the phantom arm lives
+  const side      = configRef.current.amputationSide    || 'LEFT';
   const xPhantom = side === 'LEFT' ? -1 : 1;
-  const xReal    = -xPhantom;                        // real hand is on the opposite side
+  const xReal    = -xPhantom;                        
 
-  const xOffset = 0.7 + Math.random() * (r * 0.8);  // lateral offset from centre
-  const y       = -0.5 + Math.random() * (r * 0.9); // shared Y for both balls
-  const z       = -1.7;
+  // Calibrated layout coordinates matching screen bounds
+  const xOffset = 0.6 + Math.random() * 1.2;  
+  const y       = -0.4 + Math.random() * 1.0; 
+  const z       = 0.0; 
 
-  // Real-hand ball
-  targetA.mesh.position.set(xReal    * xOffset, y, z);
-  targetA.light.position.set(xReal   * xOffset, y, z);
+  // Real-hand ball (Stable Position)
+  targetA.mesh.position.set(xReal * xOffset, y, z);
+  targetA.light.position.set(xReal * xOffset, y, z);
   targetA.mesh.scale.set(0.05, 0.05, 0.05);
 
-  // Phantom-arm ball
+  // Phantom-arm ball (Perfect Mirrored Position)
   targetB.mesh.position.set(xPhantom * xOffset, y, z);
   targetB.light.position.set(xPhantom * xOffset, y, z);
   targetB.mesh.scale.set(0.05, 0.05, 0.05);
 }
 
-// ─── PARTICLES ───────────────────────────────────────────────────────────────
+// PARTICLES ───────────────────────────────────────────────────────────────
 function burstParticles(scene, pos, toneHex, particlesRef) {
   const tone = new THREE.Color(toneHex);
   for (let i = 0; i < 28; i++) {
@@ -129,12 +123,11 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
     hoverAccumMs:             0,
   });
 
-  // ── Target pair refs  ──────────────────────────────────────────────────────
-  // targetPairRef.current = { a: {mesh,light}, b: {mesh,light} }
-  // "a" is the real-hand target, "b" is the phantom-arm target.
-  // Collision is checked on "a" (real index finger tip) and "b" (phantom tip).
   const targetPairRef = useRef(null);
   const particlesRef  = useRef([]);
+
+  const gameStateRef = useRef('ready');
+  useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
 
   // ── Mirror engine hook ─────────────────────────────────────────────────────
   const onLandmarksUpdate = useCallback((smoothed) => {
@@ -191,36 +184,35 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
     if (!targetPairRef.current || gameStateRef.current !== 'running') return;
 
     const { a: targetA, b: targetB } = targetPairRef.current;
-    const fingerTip  = smoothed[8];  // index finger tip — follows real hand
+    const fingerTip  = smoothed[8];  // Index finger tip
     if (!fingerTip) return;
 
     const dwellMs = configRef.current.requiredHoverDwellTimeMs;
 
     /**
-     * Collision check:
-     *  - The real hand (fingerTip) hits targetA (real-hand ball).
-     *  - The phantom arm copies the motion so targetB is hit simultaneously,
-     *    but we drive the game purely from the real hand's position to keep
-     *    physics deterministic.
+     * 🎯 RE-MAPPED COORDINATE SYSTEM TRANSLATION:
+     * Shift MediaPipe coordinates to match the Three.js viewport dimensions,
+     * centering the space and flipping the Y-axis inversion seamlessly.
      */
+    const calX = (fingerTip.x - 0.5) * 4.5;
+    const calY = ((1.0 - fingerTip.y) - 0.5) * 3.0;
+
     const distA = Math.hypot(
-      fingerTip.x - targetA.mesh.position.x,
-      fingerTip.y - targetA.mesh.position.y
+      calX - targetA.mesh.position.x,
+      calY - targetA.mesh.position.y
     );
 
-    if (distA < 1.05) {
+    // Dynamic and forgiving checking window for stable collision interactions
+    if (distA < 0.65) {
       configRef.current.hoverAccumMs += 16;
       const pct = Math.min(100, (configRef.current.hoverAccumMs / dwellMs) * 100);
       setHoverPct(Math.round(pct));
 
       if (configRef.current.hoverAccumMs >= dwellMs) {
-        // ── HIT ────────────────────────────────────────────────────────────
+        // ── HIT TRIGGERED ───────────────────────────────────────────────────
         playSuccessChime();
-        // Burst particles on BOTH balls for visual reinforcement
-        burstParticles(sceneRef.current, targetA.mesh.position.clone(),
-          configRef.current.skinToneSliderHex, particlesRef);
-        burstParticles(sceneRef.current, targetB.mesh.position.clone(),
-          configRef.current.skinToneSliderHex, particlesRef);
+        burstParticles(sceneRef.current, targetA.mesh.position.clone(), configRef.current.skinToneSliderHex, particlesRef);
+        burstParticles(sceneRef.current, targetB.mesh.position.clone(), configRef.current.skinToneSliderHex, particlesRef);
 
         statsRef.current.hits++;
         setTargetsHit(statsRef.current.hits);
@@ -228,18 +220,14 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
         configRef.current.hoverAccumMs = 0;
         setHoverPct(0);
 
-        // Respawn both balls
+        // Respawn immediately to a stable location configuration anywhere on frame
         spawnTargetPair(targetA, targetB, configRef);
         statsRef.current.spawned++;
         setTargetsSpawned(statsRef.current.spawned);
       }
     } else {
-      configRef.current.hoverAccumMs = Math.max(
-        0, configRef.current.hoverAccumMs - 32
-      );
-      setHoverPct(Math.round(
-        (configRef.current.hoverAccumMs / dwellMs) * 100
-      ));
+      configRef.current.hoverAccumMs = Math.max(0, configRef.current.hoverAccumMs - 32);
+      setHoverPct(Math.round((configRef.current.hoverAccumMs / dwellMs) * 100));
     }
 
     // ── Range of Motion ──────────────────────────────────────────────────────
@@ -265,16 +253,13 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
     }
   };
 
-  const gameStateRef = useRef('ready');
-  useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
-
   // ─── Per-frame render callback ─────────────────────────────────────────────
   const onFrame = useCallback((dt) => {
     const pair  = targetPairRef.current;
     const scene = sceneRef.current;
     if (!pair || !scene) return;
-
-    // Animate each ball
+  
+    // Scale pulsing animations (The position is kept stable and fixed)
     for (const target of [pair.a, pair.b]) {
       target.mesh.rotation.y += 1.1  * dt;
       target.mesh.rotation.x += 0.45 * dt;
@@ -286,8 +271,8 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
         target.mesh.scale.set(p, p, p);
       }
     }
-
-    // Particle decay
+  
+    // Particle degradation cycle
     for (let i = particlesRef.current.length - 1; i >= 0; i--) {
       const p = particlesRef.current[i];
       p.mesh.position.add(p.vel);
@@ -302,6 +287,39 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
       }
     }
   }, [sceneRef]);
+
+  // ─── Finish session ───────────────────────────────────────────────────────
+  const finishSession = useCallback(async () => {
+    setGameState('saving');
+    statsRef.current.endTime = Date.now();
+    stopRenderLoop();
+    destroy();
+
+    const { hits, spawned, startTime, endTime, peakROM: rom, telemetry } = statsRef.current;
+    const acc = spawned > 0 ? Math.round((hits / spawned) * 100) : 0;
+    setAccuracy(acc);
+
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post(
+        'http://localhost:5000/api/sessions',
+        {
+          patientId:                 profile?._id,
+          startTime:                 new Date(startTime),
+          endTime:                   new Date(endTime),
+          targetsSpawned:            spawned,
+          targetsHit:                hits,
+          peakRangeOfMotionDegrees:  rom,
+          telemetryStream:           telemetry,
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+    } catch (e) {
+      console.error('Session save failed:', e);
+    }
+
+    setGameState('finished');
+  }, [destroy, profile?._id, stopRenderLoop]);
 
   // ─── Start session ─────────────────────────────────────────────────────────
   const startSession = useCallback(() => {
@@ -321,14 +339,13 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
     setGameState('running');
   }, []);
 
-  // ─── Engine init (fires when running state mounts) ─────────────────────────
+  // ─── Engine init ───────────────────────────────────────────────────────────
   useEffect(() => {
     if (gameState !== 'running') return;
     if (!canvasRef.current || !videoRef.current || !containerRef.current) return;
 
     const scene = initThreeJS(canvasRef.current, containerRef.current);
 
-    // Create BOTH target balls
     const tA = makeTargetMesh(scene);
     const tB = makeTargetMesh(scene);
     spawnTargetPair(tA, tB, configRef);
@@ -346,58 +363,26 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
       targetPairRef.current = null;
       particlesRef.current  = [];
     };
-  }, [destroy, gameState, initMediaPipe, initThreeJS, onFrame, startRenderLoop, stopRenderLoop]);
+  }, [gameState, initThreeJS, startRenderLoop, onFrame, initMediaPipe, destroy]);
 
   // ─── Countdown timer ─────────────────────────────────────────────────────
   useEffect(() => {
     if (gameState !== 'running') return;
     const id = setInterval(() => {
       setSecondsLeft(prev => {
-        if (prev <= 1) { clearInterval(id); finishSession(); return 0; }
+        if (prev <= 1) { 
+          clearInterval(id); 
+          finishSession(); 
+          return 0; 
+        }
         return prev - 1;
       });
     }, 1000);
     return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameState]);
-
-  // ─── Finish session ───────────────────────────────────────────────────────
-  const finishSession = useCallback(async () => {
-    setGameState('saving');
-    statsRef.current.endTime = Date.now();
-    stopRenderLoop();
-    destroy();
-
-    const { hits, spawned, startTime, endTime, peakROM: rom, telemetry } = statsRef.current;
-    const dur = Math.round((endTime - startTime) / 1000);
-    const acc = spawned > 0 ? Math.round((hits / spawned) * 100) : 0;
-    setAccuracy(acc);
-
-    try {
-      const token = localStorage.getItem('token');
-      await axios.post(
-        'http://localhost:5000/api/sessions',
-        {
-          patientId:                 profile._id,
-          startTime:                 new Date(startTime),
-          endTime:                   new Date(endTime),
-          targetsSpawned:            spawned,
-          targetsHit:                hits,
-          peakRangeOfMotionDegrees:  rom,
-          telemetryStream:           telemetry,
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-    } catch (e) {
-      console.error('Session save failed:', e);
-    }
-
-    setGameState('finished');
-  }, [destroy, profile, stopRenderLoop]);
+  }, [gameState, finishSession]);
 
   const exitToBoard = () => { destroy(); onNavigate('dashboard'); };
 
-  // ─── Render ───────────────────────────────────────────────────────────────
   const mm = String(Math.floor(secondsLeft / 60)).padStart(2, '0');
   const ss = String(secondsLeft % 60).padStart(2, '0');
 
@@ -406,7 +391,6 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
       className={`animate-fade-in ${gameState === 'running' ? 'mirror-session-shell' : ''}`}
       style={gameState === 'running' ? undefined : { padding: '20px', maxWidth: '1200px', margin: '0 auto' }}
     >
-
       {/* ── READY STATE ───────────────────────────────────────────────────── */}
       {gameState === 'ready' && (
         <div className="glass-panel p-8 animate-fade-in"
@@ -420,7 +404,6 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
             The engine will mirror it and project a 3D ghost arm in real time.
           </p>
 
-          {/* Prescription summary */}
           <div style={{
             background: 'var(--bg-secondary)', border: '1px solid var(--border-color)',
             borderRadius: 12, padding: 16, textAlign: 'left', marginBottom: 28, fontSize: '0.9rem'
@@ -429,8 +412,7 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
               Active Prescription
             </strong>
             <ul style={{ listStyle: 'disc', paddingLeft: 20, color: 'var(--text-secondary)', lineHeight: 1.8 }}>
-              <li>Duration: {Math.round(configRef.current.prescribedDuration / 60)} min
-                ({configRef.current.prescribedDuration}s)</li>
+              <li>Duration: {Math.round(configRef.current.prescribedDuration / 60)} min ({configRef.current.prescribedDuration}s)</li>
               <li>Hover dwell: {(configRef.current.requiredHoverDwellTimeMs / 1000).toFixed(1)}s per target</li>
               <li>Amputated side: <strong>{configRef.current.amputationSide}</strong></li>
               <li>Amputation level: <strong>{configRef.current.amputationLevel}</strong></li>
