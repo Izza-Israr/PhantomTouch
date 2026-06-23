@@ -4,7 +4,20 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>frontend</title>
+    <meta name="description" content="PhantomTouch — Browser-based 3D mirror therapy for phantom limb pain. Track your hand in real-time and rebuild neural pathways with an interactive WebGL ghost arm." />
+    <meta name="keywords" content="phantom limb pain, mirror therapy, telerehabilitation, WebGL, MediaPipe, amputee therapy" />
+    <title>PhantomTouch | 3D Mirror Therapy for Phantom Limb Pain</title>
+
+    <!--
+      MediaPipe scripts loaded locally from /public/mediapipe/.
+      Vite serves everything in /public at the root path, so these resolve
+      to /mediapipe/camera_utils/camera_utils.js etc. at runtime.
+      Loading them as plain <script> tags (NOT ES-modules) is required by
+      MediaPipe — its UMD bundles attach themselves to `window.Camera` and
+      `window.Hands`, which our React components then read.
+    -->
+    <script src="/mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="/mediapipe/hands/hands.js" crossorigin="anonymous"></script>
   </head>
   <body>
     <div id="root"></div>
