@@ -79,7 +79,10 @@ export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
       scene,
       configRef,
       {
+        visualMode: 'surface',
+        useGlbRig: true,
         scaleMultiplier: 1.55,
+        realisticScaleMultiplier: 1.65,
       }
     );
 
