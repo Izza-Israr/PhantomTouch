@@ -1,15 +1,26 @@
 import * as THREE from 'three';
 
 export class HandModel3D {
-  constructor(scene, configRef, color = 0x00ffff) {
+  constructor(scene, configRef, color = 0x00ffff, options = {}) {
     this.scene = scene;
     this.configRef = configRef;
+    this.options = options;
 
     this.group = new THREE.Group();
     this.scene.add(this.group);
 
-    this.jointGeo = new THREE.SphereGeometry(0.08, 8, 8);
-    this.jointMat = new THREE.MeshBasicMaterial({
+    this.cartoon = !!options?.cartoon;
+    const jointRadius = this.cartoon ? 0.12 : 0.08;
+    this.jointGeo = new THREE.SphereGeometry(jointRadius, 16, 12);
+    this.jointMat = this.cartoon ? new THREE.MeshToonMaterial({
+      color: color,
+      flatShading: true,
+      emissive: color,
+      emissiveIntensity: 0.35,
+      transparent: true,
+      opacity: 0.9,
+      depthTest: true,
+    }) : new THREE.MeshBasicMaterial({
       color: color,
       wireframe: true,
       transparent: true,
@@ -42,12 +53,21 @@ export class HandModel3D {
     this.linePositionsArray = new Float32Array(this.connections.length * 2 * 3);
     this.lineGeometry = new THREE.BufferGeometry();
     this.lineGeometry.setAttribute("position", new THREE.BufferAttribute(this.linePositionsArray, 3));
-    this.lineMaterial = new THREE.LineBasicMaterial({ color: color, linewidth: 2 });
+    this.baseLineColor = new THREE.Color(color);
+    this.baseLineHSL = { h: 0, s: 0, l: 0 };
+    this.baseLineColor.getHSL(this.baseLineHSL);
+    this.lineMaterial = new THREE.LineBasicMaterial({
+      color: color,
+      linewidth: this.cartoon ? 4 : 2,
+      transparent: true,
+      opacity: this.cartoon ? 0.95 : 0.8,
+    });
     this.line = new THREE.LineSegments(this.lineGeometry, this.lineMaterial);
     this.line.frustumCulled = false;
     this.group.add(this.line);
 
     this._outputPositions = [];
+    this.animationPhase = 0;
     for (let i = 0; i < this.jointCount; i++) {
       this._outputPositions.push({ x: 0, y: 0, z: 0 });
     }
@@ -55,6 +75,25 @@ export class HandModel3D {
     this.smoothing = 0.2; // Quick response tracking
     this._ndcVector = new THREE.Vector3();
     this._camPos = new THREE.Vector3();
+  }
+
+  animate(dt) {
+    if (!this.cartoon) return;
+    this.animationPhase += dt * 2.8;
+    const floatY = Math.sin(this.animationPhase * 1.1) * 0.03;
+    const tilt = Math.sin(this.animationPhase * 0.75) * 0.05;
+    const pulse = 0.45 + Math.sin(this.animationPhase * 2.2) * 0.08;
+
+    this.group.position.y = floatY;
+    this.group.rotation.z = tilt;
+    this.group.rotation.x = tilt * 0.3;
+
+    const lineLight = Math.max(0.25, Math.min(0.6, pulse));
+    this.lineMaterial.color.setHSL(this.baseLineHSL.h, this.baseLineHSL.s, lineLight);
+
+    if (this.jointMat.emissive) {
+      this.jointMat.emissiveIntensity = 0.25 + Math.abs(Math.sin(this.animationPhase * 1.7)) * 0.25;
+    }
   }
 
   update(landmarks, camera, isPhantom = false) {

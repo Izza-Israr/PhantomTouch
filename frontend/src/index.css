@@ -279,7 +279,7 @@ label {
 }
 
 .mirror-camera-feed {
-  object-fit: cover;
+  object-fit: contain;
   transform: scaleX(-1);
   background: #050812;
   z-index: 1;

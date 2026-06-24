@@ -1,6 +1,7 @@
 import { useRef, useCallback } from 'react';
 import * as THREE from 'three';
 import { HandModel3D } from '../utils/HandModel3D';
+import { GLBHandModel3D } from '../utils/GLBHandModel3D';
 
 export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
 
@@ -35,14 +36,13 @@ export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
 
     // 🔧 FIXED CAMERA (better visibility)
     const camera = new THREE.PerspectiveCamera(
-      75,
+      72,
       w / h,
       0.1,
       100
     );
 
     camera.position.set(0, 0, 8);
-    camera.fov = 60;
     camera.updateProjectionMatrix();
     cameraRef.current = camera;
 
@@ -53,7 +53,7 @@ export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
     });
 
     renderer.setSize(w, h);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setClearColor(0x000000, 0);
 
     rendererRef.current = renderer;
@@ -75,10 +75,12 @@ export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
       0x00ff00   // Green (No arbitrary linear offsets!)
     );
     
-    phantomHandRef.current = new HandModel3D(
+    phantomHandRef.current = new GLBHandModel3D(
       scene,
       configRef,
-      0xff00ff   // Magenta (No arbitrary linear offsets!)
+      {
+        scaleMultiplier: 1.55,
+      }
     );
 
     clockRef.current = new THREE.Clock();
@@ -195,7 +197,7 @@ export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
 
     hands.setOptions({
       maxNumHands: 1,
-      modelComplexity: 0,
+      modelComplexity: 1,
       minDetectionConfidence: 0.6,
       minTrackingConfidence: 0.5
     });
@@ -211,8 +213,8 @@ export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
     handsRef.current = hands;
 
     const cam = new window.Camera(videoEl, {
-      width: 640,
-      height: 480,
+      width: 1280,
+      height: 720,
       onFrame: async () => {
         await hands.send({ image: videoEl });
       }
