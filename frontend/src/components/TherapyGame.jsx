@@ -100,6 +100,7 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
   const containerRef = useRef(null);
   const canvasRef    = useRef(null);
   const videoRef     = useRef(null);
+  const overlayRef   = useRef(null);
 
   const statsRef = useRef({
     hits: 0, spawned: 0, startTime: null, endTime: null,
@@ -124,11 +125,72 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
 
   useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
 
-  const onLandmarksUpdate = useCallback((landmarksData) => {
-    if (!landmarksData) return;
-    const targetHand = configRef.current.amputationSide === 'LEFT' ? landmarksData.real : landmarksData.phantom;
-    if (targetHand) {
-      handleLandmarks(targetHand);
+  const onLandmarksUpdate = useCallback((data) => {
+    if (!data) return;
+    const { real, phantom, phantom2D } = data;
+    // Use the healthy (real) hand for gameplay logic so targets lock consistently
+    const targetHand = real;
+    if (targetHand) handleLandmarks(targetHand);
+
+    // Draw phantom overlay in image-space if available
+    if (phantom2D && overlayRef.current && videoRef.current) {
+      const canvas = overlayRef.current;
+      const ctx = canvas.getContext('2d');
+      const vw = canvas.width = videoRef.current.clientWidth || videoRef.current.videoWidth || window.innerWidth;
+      const vh = canvas.height = videoRef.current.clientHeight || videoRef.current.videoHeight || window.innerHeight;
+      ctx.clearRect(0,0,vw,vh);
+
+      const drawCircle = (x,y,r,color) => {
+        ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fillStyle = color; ctx.fill();
+      };
+      const toPixel = (pt) => ({ x: pt.x * vw, y: pt.y * vh });
+
+      // draw shoulder-elbow-wrist chain
+      const { shoulder, elbow, wrist, joints } = phantom2D;
+      // if coordinates are raw (not flipped), mirror X when converting to pixels
+      const pixelFromPoint = (pt) => ({ x: (1 - pt.x) * vw, y: pt.y * vh });
+      // Debug text
+      ctx.fillStyle = '#ffffff'; ctx.font = '12px monospace';
+      ctx.fillText(`shoulder:${shoulder?1:0} elbow:${elbow?1:0} wrist:${wrist?1:0}`, 8, 14);
+      ctx.lineWidth = 3; ctx.strokeStyle = '#FF00FF'; ctx.fillStyle = '#FF00FF';
+      if (shoulder && elbow) {
+        const s = pixelFromPoint(shoulder); const e = pixelFromPoint(elbow);
+        ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(e.x, e.y); ctx.stroke();
+        drawCircle(s.x,s.y,6,'#FF00FF'); drawCircle(e.x,e.y,5,'#FF00FF');
+      }
+      if ((elbow && wrist) || (!elbow && wrist)) {
+        const w = pixelFromPoint(wrist);
+        const from = elbow ? pixelFromPoint(elbow) : shoulder ? pixelFromPoint(shoulder) : null;
+        if (from) { ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.lineTo(w.x, w.y); ctx.stroke(); }
+        drawCircle(w.x,w.y,5,'#FF0000');
+      }
+
+      // draw finger joints and skeleton connections
+      if (Array.isArray(joints)) {
+        ctx.strokeStyle = '#00FFCC'; ctx.fillStyle = '#00FFCC'; ctx.lineWidth = 2;
+        const fingerChains = [
+          [0,1,2,3,4],
+          [0,5,6,7,8],
+          [5,9,10,11,12],
+          [9,13,14,15,16],
+          [0,17,18,19,20]
+        ];
+
+        // draw connections
+        fingerChains.forEach(chain => {
+          let prev = null;
+          chain.forEach(i => {
+            const pt = joints[i];
+            if (!pt) { prev = null; return; }
+            const p = pixelFromPoint(pt);
+            drawCircle(p.x, p.y, 4, '#00FFCC');
+            if (prev) {
+              ctx.beginPath(); ctx.moveTo(prev.x, prev.y); ctx.lineTo(p.x, p.y); ctx.stroke();
+            }
+            prev = p;
+          });
+        });
+      }
     }
   }, []);
 
@@ -308,6 +370,7 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
             style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 2, pointerEvents: 'none' }}
           >
             <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block' }} />
+            <canvas ref={overlayRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', transform: 'scaleX(-1)', zIndex: 20 }} />
           </div>
 
           {/* Layer 3: Dynamic HUD Controller Top Bar */}
@@ -316,6 +379,16 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
             <div className="mirror-stat" style={{ color: '#00FFCC', fontSize: '1.4rem', fontFamily: 'monospace' }}><strong>Hits: {targetsHit}/{targetsSpawned}</strong></div>
             {hoverPct > 0 && <div className="font-bold animate-pulse" style={{ color: '#ffb703', marginLeft: '25px', fontSize: '1.2rem' }}>Target Lock {hoverPct}%</div>}
             <button className="btn btn-secondary" onClick={finishSession} style={{ marginLeft: 'auto', padding: '10px 24px', fontSize: '1rem', cursor: 'pointer' }}>End</button>
+          </div>
+
+          {/* Layer 4: Camera Debug Box (shows stream/state) */}
+          <div style={{ position: 'absolute', right: 18, bottom: 18, zIndex: 4, background: 'rgba(0,0,0,0.5)', color: '#fff', padding: '8px 12px', borderRadius: 8, fontSize: 12, fontFamily: 'monospace', textAlign: 'left' }}>
+            <div style={{ fontWeight: 'bold', marginBottom: 6 }}>Camera Status</div>
+            <div>Stream: {videoRef.current && videoRef.current.srcObject ? 'connected' : 'none'}</div>
+            <div>Tracks: {videoRef.current && videoRef.current.srcObject ? (videoRef.current.srcObject.getTracks?.().length || 0) : 0}</div>
+            <div>ReadyState: {videoRef.current ? videoRef.current.readyState : 'n/a'}</div>
+            <div>Paused: {videoRef.current ? String(videoRef.current.paused) : 'n/a'}</div>
+            <div style={{ marginTop: 6, opacity: 0.9 }}>Tip: check browser permissions and secure context.</div>
           </div>
         </div>
       )}
