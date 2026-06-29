@@ -12,7 +12,7 @@ export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
   const clockRef = useRef(null);
   const rafRef = useRef(null);
 
-  // 🔴 TWO HANDS (IMPORTANT FIX)
+  // TWO HANDS
   const healthyHandRef = useRef(null);
   const phantomHandRef = useRef(null);
 
@@ -34,7 +34,6 @@ export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
     const scene = new THREE.Scene();
     sceneRef.current = scene;
 
-    // 🔧 FIXED CAMERA (better visibility)
     const camera = new THREE.PerspectiveCamera(
       72,
       w / h,
@@ -56,30 +55,39 @@ export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setClearColor(0x000000, 0);
 
+    // TURN ON SHADOW RENDERING FOR REALISTIC 3D CONTRAST
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     rendererRef.current = renderer;
 
-    // LIGHTING
-    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+    // LIGHTING WITH DIRECTIONAL SHADOW COUNTERS
+    scene.add(new THREE.AmbientLight(0xffffff, 0.45));
 
-    const dir = new THREE.DirectionalLight(0xffffff, 0.9);
-    dir.position.set(2, 4, 5);
-    scene.add(dir);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+    dirLight.position.set(4, 8, 6);
+    dirLight.castShadow = true;
+    
+    dirLight.shadow.mapSize.width = 2048;
+    dirLight.shadow.mapSize.height = 2048;
+    dirLight.shadow.camera.near = 0.5;
+    dirLight.shadow.camera.far = 20;
+    
+    scene.add(dirLight);
 
     // =========================
-    // 🔴 CREATE TWO HANDS
+    // CREATE TWO HANDS
     // =========================
-
     healthyHandRef.current = new HandModel3D(
       scene,
       configRef,
-      0x00ff00   // Green (No arbitrary linear offsets!)
+      0x00ff00
     );
     
     phantomHandRef.current = new GLBHandModel3D(
       scene,
       configRef,
       {
-        visualMode: 'surface',
+        visualMode: 'realistic', // Swapped mode to trigger realistic GLTF render pipeline
         useGlbRig: true,
         scaleMultiplier: 1.55,
         realisticScaleMultiplier: 1.65,
@@ -142,18 +150,12 @@ export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
       !cameraRef.current
     ) return;
 
-    // ==========================================
-    // APPLY LANDMARKS WITH SCREEN-SPACE MIRRORING
-    // ==========================================
-    
-    // REAL HAND (isPhantom = false: perfectly maps and tracks over your true hand)
     const real = healthyHandRef.current.update(
       landmarks,
       cameraRef.current,
       false
     );
     
-    // PHANTOM HAND (isPhantom = true: reflects perfectly to the alternate side)
     const phantom = phantomHandRef.current.update(
       landmarks,
       cameraRef.current,
@@ -236,7 +238,6 @@ export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
   const destroy = useCallback(() => {
 
     stopRenderLoop();
-
     mpCamRef.current?.stop?.();
 
     if (rendererRef.current?._resizeHandler) {
@@ -247,7 +248,6 @@ export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
     }
 
     rendererRef.current?.dispose();
-
     healthyHandRef.current?.destroy();
     phantomHandRef.current?.destroy();
 
