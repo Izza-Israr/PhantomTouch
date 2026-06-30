@@ -143,12 +143,12 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
       const drawCircle = (x,y,r,color) => {
         ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fillStyle = color; ctx.fill();
       };
-      const toPixel = (pt) => ({ x: pt.x * vw, y: pt.y * vh });
 
       // draw shoulder-elbow-wrist chain
       const { shoulder, elbow, wrist, joints } = phantom2D;
-      // if coordinates are raw (not flipped), mirror X when converting to pixels
-      const pixelFromPoint = (pt) => ({ x: (1 - pt.x) * vw, y: pt.y * vh });
+      // NOTE: the overlay <canvas> itself is already CSS-mirrored (transform: scaleX(-1)),
+      // so we must NOT flip x again here. Use raw normalized coords -> pixels.
+      const pixelFromPoint = (pt) => ({ x: pt.x * vw, y: pt.y * vh });
       // Debug text
       ctx.fillStyle = '#ffffff'; ctx.font = '12px monospace';
       ctx.fillText(`shoulder:${shoulder?1:0} elbow:${elbow?1:0} wrist:${wrist?1:0}`, 8, 14);

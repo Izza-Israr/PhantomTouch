@@ -1,26 +1,25 @@
 import { useRef, useCallback } from 'react';
 import * as THREE from 'three';
 import { HandModel3D } from '../utils/HandModel3D';
-import { GLBHandModel3D } from '../utils/GLBHandModel3D';
 
 export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
-  // THREE CORE REFERENCES
   const sceneRef = useRef(null);
   const cameraRef = useRef(null);
   const rendererRef = useRef(null);
   const clockRef = useRef(null);
   const rafRef = useRef(null);
 
-  // MODELS CONTROLLERS
   const healthyHandRef = useRef(null);
   const phantomHandRef = useRef(null);
 
-  // PIPELINE STATE MANAGEMENT
   const holisticRef = useRef(null);
   const mpCamRef = useRef(null);
 
   const lastUiUpdateRef = useRef(0);
-  const UI_UPDATE_INTERVAL_MS = 60; // Fluid updates layout
+  const UI_UPDATE_INTERVAL_MS = 60;
+
+  const VIS_THRESHOLD = 0.45;
+  const isVisible = (lm) => lm && (lm.visibility === undefined || lm.visibility > VIS_THRESHOLD);
 
   const initThreeJS = useCallback((canvasEl, containerEl) => {
     const w = containerEl.clientWidth;
@@ -51,9 +50,7 @@ export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
     dirLight.castShadow = true;
     scene.add(dirLight);
 
-    // Initializing custom joint arrays setup mapping
     healthyHandRef.current = new HandModel3D(scene, configRef, 0x00ff00);
-    // Use a wireframe joint model for the phantom as well (2D overlay is the primary visualization)
     phantomHandRef.current = new HandModel3D(scene, configRef, 0xff00ff);
 
     clockRef.current = new THREE.Clock();
@@ -85,6 +82,71 @@ export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
   }, []);
 
+  const hideArm = useCallback(() => {
+    healthyHandRef.current?.hideAll();
+    phantomHandRef.current?.hideAll();
+  }, []);
+
+  const buildIndices = (side) => {
+    const shIdx = side === 'RIGHT' ? 12 : 11;
+    const elIdx = side === 'RIGHT' ? 14 : 13;
+    const wrIdx = side === 'RIGHT' ? 16 : 15;
+    const healthyShIdx = side === 'RIGHT' ? 11 : 12;
+    const healthyElIdx = side === 'RIGHT' ? 13 : 14;
+    const healthyWrIdx = side === 'RIGHT' ? 15 : 16;
+    return { shIdx, elIdx, wrIdx, healthyShIdx, healthyElIdx, healthyWrIdx };
+  };
+
+  const assessLevel = (poseLandmarks, idx) => {
+    const elbowVisible = isVisible(poseLandmarks[idx.elIdx]);
+    const wristVisible = isVisible(poseLandmarks[idx.wrIdx]);
+    if (!elbowVisible) return 'ABOVE_ELBOW';
+    if (elbowVisible && !wristVisible) return 'BELOW_ELBOW';
+    return 'HAND_ONLY';
+  };
+
+  // Mirrors a 2D point across the body centerline (midpoint of both shoulders)
+  const reflectPoint = (lm, centerX) => lm ? { x: 2 * centerX - lm.x, y: lm.y, z: lm.z || 0 } : null;
+
+  const buildPhantom2D = (poseLandmarks, healthyHand, healthyIndices, phantomIndices) => {
+    const hSh = poseLandmarks[healthyIndices.healthyShIdx];
+    const hEl = poseLandmarks[healthyIndices.healthyElIdx];
+    const hWr = poseLandmarks[healthyIndices.healthyWrIdx];
+    const aShRaw = poseLandmarks[phantomIndices.shIdx];
+    const aElRaw = poseLandmarks[phantomIndices.elIdx];
+    const aWrRaw = poseLandmarks[phantomIndices.wrIdx];
+
+    if (!hSh) {
+      return { joints: Array(21).fill(null), shoulder: null, elbow: null, wrist: null };
+    }
+
+    const centerX = isVisible(aShRaw) ? (hSh.x + aShRaw.x) / 2 : 0.5;
+
+    let shoulder2D = isVisible(aShRaw) ? { x: aShRaw.x, y: aShRaw.y } : reflectPoint(hSh, centerX);
+    let elbow2D = isVisible(aElRaw) ? { x: aElRaw.x, y: aElRaw.y } : (hEl ? reflectPoint(hEl, centerX) : null);
+    let wrist2D = isVisible(aWrRaw) ? { x: aWrRaw.x, y: aWrRaw.y } : (hWr ? reflectPoint(hWr, centerX) : null);
+
+    if (!elbow2D && shoulder2D && wrist2D) {
+      elbow2D = { x: shoulder2D.x + (wrist2D.x - shoulder2D.x) * 0.45, y: shoulder2D.y + (wrist2D.y - shoulder2D.y) * 0.45 };
+    }
+    if (!wrist2D && elbow2D && shoulder2D) {
+      wrist2D = { x: elbow2D.x + (elbow2D.x - shoulder2D.x) * 0.9, y: elbow2D.y + (elbow2D.y - shoulder2D.y) * 0.9 };
+    }
+
+    // Mirror the real hand's finger joints directly onto the phantom wrist anchor
+    const healthyWristLm = healthyHand && healthyHand[0] ? healthyHand[0] : null;
+    const joints2D = Array.from({ length: 21 }, (_, i) => {
+      if (healthyHand && healthyHand[i] && healthyWristLm && wrist2D) {
+        const dx = healthyHand[i].x - healthyWristLm.x;
+        const dy = healthyHand[i].y - healthyWristLm.y;
+        return { x: wrist2D.x - dx, y: wrist2D.y + dy, z: healthyHand[i].z || 0 };
+      }
+      return wrist2D ? { x: wrist2D.x, y: wrist2D.y, z: 0 } : null;
+    });
+
+    return { joints: joints2D, shoulder: shoulder2D, elbow: elbow2D, wrist: wrist2D };
+  };
+
   const processHolisticData = useCallback((results) => {
     if (!healthyHandRef.current || !phantomHandRef.current || !cameraRef.current) return;
 
@@ -99,126 +161,46 @@ export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
 
     const configuredAmpSide = configRef.current?.amputationSide === 'RIGHT' ? 'RIGHT' : 'LEFT';
 
-    const buildIndices = (side) => {
-      // For Mediapipe pose: left shoulder=11,leftElbow=13,leftWrist=15; right shoulder=12,14,16
-      const shIdx = side === 'RIGHT' ? 12 : 11;
-      const elIdx = side === 'RIGHT' ? 14 : 13;
-      const wrIdx = side === 'RIGHT' ? 16 : 15;
+    // Detect which side is actually being tracked right now (config = preference, not law)
+    const leftHasArm = isVisible(poseLandmarks[15]) && (leftHand || isVisible(poseLandmarks[13]));
+    const rightHasArm = isVisible(poseLandmarks[16]) && (rightHand || isVisible(poseLandmarks[14]));
+    const preferredHealthy = configuredAmpSide === 'RIGHT' ? 'LEFT' : 'RIGHT';
 
-      const healthyShIdx = side === 'RIGHT' ? 11 : 12;
-      const healthyElIdx = side === 'RIGHT' ? 13 : 14;
-      const healthyWrIdx = side === 'RIGHT' ? 15 : 16;
+    let healthySide;
+    if (preferredHealthy === 'LEFT' && leftHasArm) healthySide = 'LEFT';
+    else if (preferredHealthy === 'RIGHT' && rightHasArm) healthySide = 'RIGHT';
+    else if (leftHasArm) healthySide = 'LEFT';
+    else if (rightHasArm) healthySide = 'RIGHT';
+    else healthySide = preferredHealthy;
 
-      return { shIdx, elIdx, wrIdx, healthyShIdx, healthyElIdx, healthyWrIdx };
-    };
+    const ampSide = healthySide === 'LEFT' ? 'RIGHT' : 'LEFT';
 
-    const assessLevel = (side) => {
-      const idx = buildIndices(side);
-      const elbowVisible = poseLandmarks[idx.elIdx] && poseLandmarks[idx.elIdx].visibility > 0.45;
-      const wristVisible = poseLandmarks[idx.wrIdx] && poseLandmarks[idx.wrIdx].visibility > 0.45;
+    const healthyIndices = buildIndices(healthySide);
+    const phantomIndices = buildIndices(ampSide);
 
-      if (!elbowVisible) return 'ABOVE_ELBOW';
-      if (elbowVisible && !wristVisible) return 'BELOW_ELBOW';
-      return 'HAND_ONLY';
-    };
+    healthyIndices.healthyShIdx = healthyIndices.shIdx;
+    healthyIndices.healthyElIdx = healthyIndices.elIdx;
+    healthyIndices.healthyWrIdx = healthyIndices.wrIdx;
+    phantomIndices.healthyShIdx = healthyIndices.shIdx;
+    phantomIndices.healthyElIdx = healthyIndices.elIdx;
+    phantomIndices.healthyWrIdx = healthyIndices.wrIdx;
 
-    const leftPayload = {
-      side: 'LEFT',
-      pose: poseLandmarks,
-      hand: leftHand,
-      indices: buildIndices('LEFT'),
-      level: assessLevel('LEFT'),
-    };
+    const healthyHand = healthySide === 'LEFT' ? leftHand : rightHand;
+    const phantomHandData = ampSide === 'LEFT' ? leftHand : rightHand;
 
-    const rightPayload = {
-      side: 'RIGHT',
-      pose: poseLandmarks,
-      hand: rightHand,
-      indices: buildIndices('RIGHT'),
-      level: assessLevel('RIGHT'),
-    };
+    const healthyPayload = { side: healthySide, pose: poseLandmarks, hand: healthyHand, indices: healthyIndices, level: assessLevel(poseLandmarks, healthyIndices) };
+    const phantomPayload = { side: ampSide, pose: poseLandmarks, hand: phantomHandData, indices: phantomIndices, level: assessLevel(poseLandmarks, phantomIndices) };
 
-    // Determine which side is healthy vs amputated
-    const ampSide = configuredAmpSide;
-    const healthySide = ampSide === 'RIGHT' ? 'LEFT' : 'RIGHT';
-
-    const healthyPayload = healthySide === 'LEFT' ? leftPayload : rightPayload;
-    const phantomPayload = ampSide === 'LEFT' ? leftPayload : rightPayload;
-
-    // Ensure the healthy payload's indices.healthy* refer to the healthy side itself
-    // (models expect indices.healthyShIdx,.. to point to the real arm landmarks when rendering the real hand)
-    healthyPayload.indices.healthyShIdx = healthyPayload.indices.shIdx;
-    healthyPayload.indices.healthyElIdx = healthyPayload.indices.elIdx;
-    healthyPayload.indices.healthyWrIdx = healthyPayload.indices.wrIdx;
-
-    // For the phantom payload, provide healthy-side reference indices so the phantom model can mirror
-    phantomPayload.indices.healthyShIdx = healthyPayload.indices.shIdx;
-    phantomPayload.indices.healthyElIdx = healthyPayload.indices.elIdx;
-    phantomPayload.indices.healthyWrIdx = healthyPayload.indices.wrIdx;
-
-    // Update both models: real visible arm (healthy) and phantom for amputated side
     const real = healthyHandRef.current.update(healthyPayload, cameraRef.current, false);
     const phantom = phantomHandRef.current.update(phantomPayload, cameraRef.current, true);
 
     const now = performance.now();
     if (onLandmarksUpdate && now - lastUiUpdateRef.current >= UI_UPDATE_INTERVAL_MS) {
-      // Build a normalized 2D phantom landmark set for overlay rendering (image-space coords)
-      const buildPhantom2D = () => {
-        const healthyHand = healthyPayload.hand;
-        const healthyPose = poseLandmarks;
-        const phantomHand = phantomPayload.hand;
-
-        const joints2D = Array.from({ length: 21 }, (_, i) => {
-          // prefer existing phantom hand landmarks, else mirror healthy hand via overlay flip (do NOT pre-flip here)
-          const ph = phantomHand && phantomHand[i] ? phantomHand[i] : null;
-          if (ph) return { x: ph.x, y: ph.y, z: ph.z ?? 0 };
-          const hh = healthyHand && healthyHand[i] ? healthyHand[i] : null;
-          if (hh) return { x: hh.x, y: hh.y, z: hh.z ?? 0 };
-          // fallback to wrist if nothing else
-          const hw = healthyHand && healthyHand[0] ? healthyHand[0] : null;
-          if (hw) return { x: hw.x, y: hw.y, z: hw.z ?? 0 };
-          return null;
-        });
-
-        const healthySh = healthyPose && healthyPose[healthyPayload.indices.healthyShIdx] ? healthyPose[healthyPayload.indices.healthyShIdx] : null;
-        const healthyEl = healthyPose && healthyPose[healthyPayload.indices.healthyElIdx] ? healthyPose[healthyPayload.indices.healthyElIdx] : null;
-        const healthyWr = healthyPose && healthyPose[healthyPayload.indices.healthyWrIdx] ? healthyPose[healthyPayload.indices.healthyWrIdx] : null;
-
-        const shoulder2D = healthySh ? { x: healthySh.x, y: healthySh.y } : null;
-        let elbow2D = healthyEl ? { x: healthyEl.x, y: healthyEl.y } : null;
-        let wrist2D = healthyWr ? { x: healthyWr.x, y: healthyWr.y } : null;
-
-        // Synthesize missing elbow/wrist if necessary
-        if (!elbow2D && shoulder2D && wrist2D) {
-          // estimate elbow as point 0.45 along shoulder->wrist
-          elbow2D = {
-            x: shoulder2D.x + (wrist2D.x - shoulder2D.x) * 0.45,
-            y: shoulder2D.y + (wrist2D.y - shoulder2D.y) * 0.45
-          };
-        }
-
-        if (!wrist2D && elbow2D && shoulder2D) {
-          // estimate wrist as extension from shoulder through elbow
-          wrist2D = {
-            x: elbow2D.x + (elbow2D.x - shoulder2D.x) * 0.9,
-            y: elbow2D.y + (elbow2D.y - shoulder2D.y) * 0.9
-          };
-        }
-
-        return { joints: joints2D, shoulder: shoulder2D, elbow: elbow2D, wrist: wrist2D };
-      };
-
-      const phantom2D = buildPhantom2D();
-      console.debug('phantom2D debug', { ampSide, healthySide, phantomHasHand: !!phantomPayload.hand, healthyHasHand: !!healthyPayload.hand, shoulder: phantom2D.shoulder, elbow: phantom2D.elbow, wrist: phantom2D.wrist });
+      const phantom2D = buildPhantom2D(poseLandmarks, healthyHand, healthyIndices, phantomIndices);
       onLandmarksUpdate({ real, phantom, phantom2D });
       lastUiUpdateRef.current = now;
     }
-  }, [configRef, onLandmarksUpdate]);
-
-  const hideArm = useCallback(() => {
-    healthyHandRef.current?.hideAll();
-    phantomHandRef.current?.hideAll();
-  }, []);
+  }, [configRef, onLandmarksUpdate, hideArm]);
 
   const initMediaPipe = useCallback((videoEl) => {
     if (!window.Holistic || !window.Camera) {
@@ -265,7 +247,6 @@ export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
         console.warn("MediaPipe Camera start failed, falling back to navigator.getUserMedia:", err);
       }
 
-      // Fallback: explicit getUserMedia + manual frame loop
       try {
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('getUserMedia not available');
         const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: false });
@@ -273,7 +254,6 @@ export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
         await videoEl.play().catch(() => {});
         console.info('Fallback media stream started', stream);
 
-        // Manual loop feeding frames to MediaPipe
         const manualLoop = async () => {
           if (videoEl && !videoEl.paused && videoEl.readyState >= 2) {
             try {
@@ -296,7 +276,6 @@ export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
       }
     };
 
-    // Start camera immediately; if metadata fires later the trigger will be idempotent
     triggerCamera();
     videoEl.onloadedmetadata = () => {
       if (!mpCamRef.current) {
