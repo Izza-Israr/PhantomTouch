@@ -9,16 +9,16 @@ export class HandModel3D {
     this.group = new THREE.Group();
     this.scene.add(this.group);
 
-    const jointRadius = 0.07;
+    const jointRadius = 0.09;
     this.jointGeo = new THREE.SphereGeometry(jointRadius, 16, 12);
-    this.jointMat = new THREE.MeshBasicMaterial({
+    this.jointMat = new THREE.MeshPhongMaterial({
       color: color,
-      wireframe: true,
+      emissive: color,
+      emissiveIntensity: 0.4,
       transparent: true,
-      opacity: 0.8
+      opacity: 0.9
     });
 
-    // 21 hand joints + 3 structural nodes (Shoulder, Elbow, Wrist) = 24 points
     this.jointCount = 24;
     this.jointMesh = new THREE.InstancedMesh(this.jointGeo, this.jointMat, this.jointCount);
     this.jointMesh.frustumCulled = false;
@@ -41,25 +41,17 @@ export class HandModel3D {
     this.linePositionsArray = new Float32Array(this.connections.length * 2 * 3);
     this.lineGeometry = new THREE.BufferGeometry();
     this.lineGeometry.setAttribute("position", new THREE.BufferAttribute(this.linePositionsArray, 3));
-    this.lineMaterial = new THREE.LineBasicMaterial({ color: color, linewidth: 2, transparent: true, opacity: 0.75 });
+    this.lineMaterial = new THREE.LineBasicMaterial({ color: color, linewidth: 4, transparent: true, opacity: 0.8 });
     this.line = new THREE.LineSegments(this.lineGeometry, this.lineMaterial);
     this.line.frustumCulled = false;
     this.group.add(this.line);
 
-    this.smoothing = 0.2;
-    this.VIS_THRESHOLD = 0.45;
-    this._ndcVector = new THREE.Vector3();
-    this._camPos = new THREE.Vector3();
+    this.smoothing = 0.22; 
+    this.VIS_THRESHOLD = 0.4;
   }
 
   _visible(lm) {
     return lm && (lm.visibility === undefined || lm.visibility > this.VIS_THRESHOLD);
-  }
-
-  // Mirrors a healthy-side landmark across the body centerline (midpoint of both shoulders)
-  _reflect(lm, centerX) {
-    if (!lm) return null;
-    return { x: 2 * centerX - lm.x, y: lm.y, z: lm.z || 0 };
   }
 
   update(armData, camera, isPhantom = false) {
@@ -69,19 +61,20 @@ export class HandModel3D {
     }
 
     this.group.visible = true;
-    const TARGET_GAME_PLANE_Z = 0.0;
-    camera.getWorldPosition(this._camPos);
-
     const { pose, hand, indices } = armData;
     const rawJoints = new Array(this.jointCount);
 
-    if (!isPhantom) {
-      // REAL (healthy) arm — actual tracked landmarks
-      const hSh = pose[indices.healthyShIdx];
-      const hEl = pose[indices.healthyElIdx];
-      const hWr = pose[indices.healthyWrIdx];
-      if (!hSh) { this.hideAll(); return null; }
+    const hSh = pose[indices.healthyShIdx];
+    const hEl = pose[indices.healthyElIdx];
+    const hWr = pose[indices.healthyWrIdx];
+    if (!hSh) { this.hideAll(); return null; }
 
+    // Use shoulders to establish a reliable mirror baseline down the middle
+    const aShRaw = pose[indices.shIdx];
+    const centerX = this._visible(aShRaw) ? (hSh.x + aShRaw.x) / 2 : 0.5;
+
+    if (!isPhantom) {
+      // --- REAL SIDE CONFIGURATION ---
       rawJoints[21] = hSh;
       rawJoints[22] = hEl || hSh;
       rawJoints[23] = hWr || hEl || hSh;
@@ -90,58 +83,37 @@ export class HandModel3D {
         rawJoints[i] = (hand && hand[i]) ? hand[i] : rawJoints[23];
       }
     } else {
-      // PHANTOM arm — mirror the healthy side across the body centerline
-      const hSh = pose[indices.healthyShIdx];
-      const hEl = pose[indices.healthyElIdx];
-      const hWr = pose[indices.healthyWrIdx];
-      if (!hSh) { this.hideAll(); return null; }
+      // --- PHANTOM MIRRORED KINEMATICS ---
+      // Shoulder anchors to the affected side frame point
+      rawJoints[21] = this._visible(aShRaw) ? aShRaw : { x: 2 * centerX - hSh.x, y: hSh.y, z: hSh.z || 0 };
+      
+      // Elbow and wrist follow your active real movements but flipped safely across the center axis
+      rawJoints[22] = hEl ? { x: 2 * centerX - hEl.x, y: hEl.y, z: hEl.z || 0 } : rawJoints[21];
+      rawJoints[23] = hWr ? { x: 2 * centerX - hWr.x, y: hWr.y, z: hWr.z || 0 } : rawJoints[22];
 
-      const aShRaw = pose[indices.shIdx];
-      const aElRaw = pose[indices.elIdx];
-      const aWrRaw = pose[indices.wrIdx];
-
-      const centerX = this._visible(aShRaw) ? (hSh.x + aShRaw.x) / 2 : 0.5;
-
-      const shoulderPoint = this._visible(aShRaw) ? aShRaw : this._reflect(hSh, centerX);
-      const elbowPoint = this._visible(aElRaw) ? aElRaw : (hEl ? this._reflect(hEl, centerX) : shoulderPoint);
-      const wristPoint = this._visible(aWrRaw) ? aWrRaw : (hWr ? this._reflect(hWr, centerX) : elbowPoint);
-
-      rawJoints[21] = shoulderPoint;
-      rawJoints[22] = elbowPoint;
-      rawJoints[23] = wristPoint;
-
-      const hWristLm = hand && hand[0] ? hand[0] : null;
       for (let i = 0; i < 21; i++) {
-        if (hand && hand[i] && hWristLm) {
-          // mirror finger offsets relative to wrist (flip x, keep y/z) and anchor to wristPoint
+        if (hand && hand[i]) {
           rawJoints[i] = {
-            x: wristPoint.x - (hand[i].x - hWristLm.x),
-            y: wristPoint.y + (hand[i].y - hWristLm.y),
-            z: (wristPoint.z || 0) + ((hand[i].z || 0) - (hWristLm.z || 0))
+            x: 2 * centerX - hand[i].x,
+            y: hand[i].y,
+            z: hand[i].z || 0
           };
         } else {
-          rawJoints[i] = wristPoint;
+          rawJoints[i] = rawJoints[23];
         }
       }
     }
 
+    // --- VIEWPORT COORDINATE MAPPING FIX ---
     for (let idx = 0; idx < this.jointCount; idx++) {
       const lm = rawJoints[idx];
       if (!lm) continue;
 
-      // Un-mirror once here (raw landmark x is mirrored-camera space -> flip to real-world space)
-      const screenX = 1 - lm.x;
-      const ndcX = (screenX * 2) - 1;
-      const ndcY = 1 - (lm.y * 2);
-
-      this._ndcVector.set(ndcX, ndcY, 0.5);
-      this._ndcVector.unproject(camera);
-      const dir = this._ndcVector.sub(this._camPos).normalize();
-      const distanceToPlane = (TARGET_GAME_PLANE_Z - this._camPos.z) / dir.z;
-
-      const x = this._camPos.x + (dir.x * distanceToPlane);
-      const y = this._camPos.y + (dir.y * distanceToPlane);
-      const z = TARGET_GAME_PLANE_Z - ((lm.z || 0) * 1.2);
+      // Map raw coordinates directly into a standardized 3D gameplay box
+      // MediaPipe X is [0, 1] left to right. Video display is inverted.
+      const x = ((1.0 - lm.x) * 8.0) - 4.0;
+      const y = ((1.0 - lm.y) * 6.0) - 3.0;
+      const z = -(lm.z || 0) * 2.0;
 
       this.targetPositions[idx].set(x, y, z);
       this.smoothedPositions[idx].lerp(this.targetPositions[idx], this.smoothing);
@@ -168,7 +140,7 @@ export class HandModel3D {
     this.lineGeometry.attributes.position.needsUpdate = true;
     this.line.visible = true;
 
-    return this.smoothedPositions.map(p => ({ x: p.x, y: p.y, z: TARGET_GAME_PLANE_Z }));
+    return this.smoothedPositions.map(p => ({ x: p.x, y: p.y, z: p.z }));
   }
 
   hideAll() { this.group.visible = false; }
