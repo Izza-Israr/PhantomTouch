@@ -26,220 +26,200 @@ function playSuccessChime() {
 function makeTargetMesh(scene) {
   const geo  = new THREE.IcosahedronGeometry(0.4, 1);
   const mat  = new THREE.MeshPhongMaterial({
-    color: 0x00f5ff, emissive: 0x00f5ff, emissiveIntensity: 0.6,
-    wireframe: true, transparent: true, opacity: 0.85,
+    color: 0x00f5ff, emissive: 0x00f5ff, emissiveIntensity: 0.4,
+    wireframe: true, transparent: true, opacity: 0.8,
   });
   const mesh  = new THREE.Mesh(geo, mat);
-  const light = new THREE.PointLight(0x00f5ff, 2.0, 6);
+  const light = new THREE.PointLight(0x00f5ff, 1.8, 6);
   scene.add(mesh);
   scene.add(light);
   return { mesh, light };
 }
 
 function makeDebugPointer(scene) {
-  const geo = new THREE.SphereGeometry(0.12, 16, 16);
-  const mat = new THREE.MeshBasicMaterial({ color: 0xff3333, depthTest: false });
+  const geo  = new THREE.SphereGeometry(0.12, 16, 16);
+  const mat  = new THREE.MeshBasicMaterial({ color: 0xff0000, depthTest: false });
   const mesh = new THREE.Mesh(geo, mat);
-  mesh.renderOrder = 999; 
+  mesh.renderOrder = 999;
   scene.add(mesh);
   return mesh;
 }
 
 function spawnTargetPair(targetA, targetB, configRef) {
-  const side = configRef.current.amputationSide || 'LEFT';
+  const side     = configRef.current.amputationSide || 'LEFT';
   const xPhantom = side === 'LEFT' ? -1 : 1;
-  const xReal    = -xPhantom;                        
+  const xReal    = -xPhantom;
+  const xOffset  = 1.2 + Math.random() * 2.0;
+  const y        = -1.2 + Math.random() * 2.4;
 
-  // Scale target ranges within the exact visible boundaries of the updated HandModel setup
-  const xOffset = 1.2 + Math.random() * 1.5;  
-  const y       = -1.0 + Math.random() * 2.2; 
-  const z       = 0.0; 
+  targetA.mesh.position.set(xReal    * xOffset, y, 0);
+  targetA.light.position.copy(targetA.mesh.position);
+  targetA.mesh.scale.set(1, 1, 1);
 
-  targetA.mesh.position.set(xReal * xOffset, y, z);
-  targetA.light.position.set(xReal * xOffset, y, z);
-
-  targetB.mesh.position.set(xPhantom * xOffset, y, z);
-  targetB.light.position.set(xPhantom * xOffset, y, z);
+  targetB.mesh.position.set(xPhantom * xOffset, y, 0);
+  targetB.light.position.copy(targetB.mesh.position);
+  targetB.mesh.scale.set(1, 1, 1);
 }
 
 function burstParticles(scene, pos, toneHex, particlesRef) {
   const tone = new THREE.Color(toneHex);
-  for (let i = 0; i < 15; i++) {
-    const geo = new THREE.BoxGeometry(0.05, 0.05, 0.05);
+  for (let i = 0; i < 20; i++) {
+    const geo = new THREE.BoxGeometry(0.06, 0.06, 0.06);
     const mat = new THREE.MeshPhongMaterial({
-      color: i % 2 === 0 ? 0x00f5ff : tone,
-      emissive: i % 2 === 0 ? 0x00f5ff : tone,
-      emissiveIntensity: 0.8,
+      color:             i % 2 === 0 ? 0x00f5ff : tone,
+      emissive:          i % 2 === 0 ? 0x00f5ff : tone,
+      emissiveIntensity: 0.9,
       transparent: true, opacity: 1,
     });
-    const p = new THREE.Mesh(geo, mat);
+    const p   = new THREE.Mesh(geo, mat);
     p.position.copy(pos);
     const vel = new THREE.Vector3(
-      (Math.random() - 0.5) * 0.12,
-      (Math.random() - 0.5) * 0.12 + 0.04,
-      (Math.random() - 0.5) * 0.12,
+      (Math.random() - 0.5) * 0.15,
+      (Math.random() - 0.5) * 0.15 + 0.05,
+      (Math.random() - 0.5) * 0.15,
     );
     scene.add(p);
     particlesRef.current.push({ mesh: p, vel, life: 1.0 });
   }
 }
 
-export const TherapyGame = ({ profile, onNavigate }) => {
-  const [gameState,       setGameState]       = useState('ready');
-  const [secondsLeft,     setSecondsLeft]     = useState(120);
-  const [targetsHit,      setTargetsHit]      = useState(0);
-  const [targetsSpawned,  setTargetsSpawned]  = useState(0);
-  const [peakROM,         setPeakROM]         = useState(0);
-  const [hoverPct,        setHoverPct]        = useState(0);
+export const TherapyGame = ({ user, profile, onNavigate }) => {
+  const [gameState,      setGameState]      = useState('ready');
+  const [secondsLeft,    setSecondsLeft]    = useState(120);
+  const [targetsHit,     setTargetsHit]     = useState(0);
+  const [targetsSpawned, setTargetsSpawned] = useState(0);
+  const [peakROM,        setPeakROM]        = useState(0);
+  const [accuracy,       setAccuracy]       = useState(0);
+  const [hoverPct,       setHoverPct]       = useState(0);
 
   const containerRef = useRef(null);
   const canvasRef    = useRef(null);
   const videoRef     = useRef(null);
-  const overlayRef   = useRef(null);
 
-  const statsRef = useRef({ hits: 0, spawned: 0, peakROM: 0, startPos: null });
+  const statsRef = useRef({
+    hits: 0, spawned: 0, startTime: null, endTime: null,
+    peakROM: 0, telemetry: [], startPos: null,
+  });
+
   const configRef = useRef({
-    amputationSide:           profile?.amputationSide           || 'LEFT',
-    skinToneSliderHex:        profile?.skinToneSliderHex        || '#aa3bff',
-    requiredHoverDwellTimeMs: 500, 
+    amputationSide:           profile?.amputationSide      || 'LEFT',
+    amputationLevel:          profile?.amputationLevel     || 'FULL',
+    meshScaleMultiplier:      profile?.meshScaleMultiplier || 1.0,
+    skinToneSliderHex:        profile?.skinToneSliderHex   || '#aa3bff',
+    prescribedDuration:       120,
+    targetSpawnRadius:        2.0,
+    requiredHoverDwellTimeMs: 800,
     hoverAccumMs:             0,
   });
 
-  const targetPairRef     = useRef(null);
-  const debugPointerRef   = useRef(null);
-  const particlesRef      = useRef([]);
-  const gameStateRef      = useRef('ready');
-
+  const targetPairRef   = useRef(null);
+  const debugPointerRef = useRef(null);
+  const particlesRef    = useRef([]);
+  const gameStateRef    = useRef('ready');
   useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
 
-  const handleLandmarks = (handArray) => {
-    if (!targetPairRef.current || gameStateRef.current !== 'running' || !handArray) return;
+  const landmarksHandlerRef = useRef(null);
+  const stableRelay = useCallback((data) => {
+    landmarksHandlerRef.current?.(data);
+  }, []);
 
-    const { a: targetA } = targetPairRef.current;
-    
-    // Index 8 and Index 0 from the returned processed 3D space array
-    const indexTip = handArray[8];  
-    if (!indexTip) return;
+  const {
+    sceneRef,
+    initThreeJS,
+    startRenderLoop,
+    stopRenderLoop,
+    initMediaPipe,
+    destroy,
+  } = useMirrorEngine({ configRef, onLandmarksUpdate: stableRelay });
 
-    const calX = indexTip.x;
-    const calY = indexTip.y;
+  const handleLandmarks = useCallback((real, phantom) => {
+    if (!targetPairRef.current || gameStateRef.current !== 'running' || !real || !phantom) return;
+    const { a: targetA, b: targetB } = targetPairRef.current;
+    if (!targetA || !targetB) return;
+
+    // Shoulder transformation logic removed here to allow targets to stay fixed in world coordinates
+
+    const indexTip = real[8];
+    const thumbTip = real[4];
+    if (!indexTip || !thumbTip) return;
+
+    const pinchX = (indexTip.x + thumbTip.x) / 2;
+    const pinchY = (indexTip.y + thumbTip.y) / 2;
 
     if (debugPointerRef.current) {
-      debugPointerRef.current.position.set(calX, calY, 0.05);
+      debugPointerRef.current.position.set(pinchX, pinchY, 0.05);
     }
 
-    const distA = Math.hypot(calX - targetA.mesh.position.x, calY - targetA.mesh.position.y);
+    const distA = Math.hypot(
+      pinchX - targetA.mesh.position.x,
+      pinchY - targetA.mesh.position.y,
+    );
 
-    if (distA < 0.85) { 
-      configRef.current.hoverAccumMs += 30; 
-      const pct = Math.min(100, (configRef.current.hoverAccumMs / configRef.current.requiredHoverDwellTimeMs) * 100);
+    if (distA < 0.70) {
+      configRef.current.hoverAccumMs += 25;
+      const pct = Math.min(100,
+        (configRef.current.hoverAccumMs / configRef.current.requiredHoverDwellTimeMs) * 100);
       setHoverPct(Math.round(pct));
 
       if (configRef.current.hoverAccumMs >= configRef.current.requiredHoverDwellTimeMs) {
         playSuccessChime();
-        burstParticles(sceneRef.current, targetPairRef.current.a.mesh.position.clone(), configRef.current.skinToneSliderHex, particlesRef);
-        burstParticles(sceneRef.current, targetPairRef.current.b.mesh.position.clone(), configRef.current.skinToneSliderHex, particlesRef);
-
+        if (sceneRef.current) {
+          burstParticles(sceneRef.current, targetA.mesh.position.clone(),
+            configRef.current.skinToneSliderHex, particlesRef);
+          burstParticles(sceneRef.current, targetB.mesh.position.clone(),
+            configRef.current.skinToneSliderHex, particlesRef);
+        }
         statsRef.current.hits++;
         setTargetsHit(statsRef.current.hits);
-
         configRef.current.hoverAccumMs = 0;
         setHoverPct(0);
-
-        spawnTargetPair(targetPairRef.current.a, targetPairRef.current.b, configRef);
+        spawnTargetPair(targetA, targetB, configRef);
         statsRef.current.spawned++;
         setTargetsSpawned(statsRef.current.spawned);
       }
     } else {
-      configRef.current.hoverAccumMs = Math.max(0, configRef.current.hoverAccumMs - 15);
-      setHoverPct(Math.round((configRef.current.hoverAccumMs / configRef.current.requiredHoverDwellTimeMs) * 100));
+      configRef.current.hoverAccumMs = Math.max(0, configRef.current.hoverAccumMs - 12);
+      setHoverPct(Math.round(
+        (configRef.current.hoverAccumMs / configRef.current.requiredHoverDwellTimeMs) * 100));
     }
 
-    const wrist = handArray[0];
-    if (wrist && !statsRef.current.startPos) {
-      statsRef.current.startPos = new THREE.Vector3(wrist.x, wrist.y, wrist.z);
-    } else if (wrist) {
+    const wrist = real[0];
+    if (wrist) {
       const currentPos = new THREE.Vector3(wrist.x, wrist.y, wrist.z);
-      const deg = Math.min(120, Math.round(currentPos.distanceTo(statsRef.current.startPos) * 15));
-      if (deg > statsRef.current.peakROM) {
-        statsRef.current.peakROM = deg;
-        setPeakROM(deg);
+      if (!statsRef.current.startPos) {
+        statsRef.current.startPos = currentPos.clone();
+      } else {
+        const deg = Math.min(120, Math.round(currentPos.distanceTo(statsRef.current.startPos) * 15));
+        if (deg > statsRef.current.peakROM) {
+          statsRef.current.peakROM = deg;
+          setPeakROM(deg);
+        }
       }
     }
-  };
+  }, [sceneRef]);
 
   const onLandmarksUpdate = useCallback((data) => {
     if (!data) return;
-    const { real, phantom2D } = data;
+    const { real, phantom } = data;
+    if (real && phantom) handleLandmarks(real, phantom);
+  }, [handleLandmarks]);
 
-    if (real) {
-      handleLandmarks(real);
-    }
-
-    if (phantom2D && overlayRef.current && videoRef.current) {
-      const canvas = overlayRef.current;
-      const ctx = canvas.getContext('2d');
-      const vw = canvas.width = videoRef.current.clientWidth || 640;
-      const vh = canvas.height = videoRef.current.clientHeight || 480;
-      ctx.clearRect(0,0,vw,vh);
-
-      const drawCircle = (x,y,r,color) => {
-        ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fillStyle = color; ctx.fill();
-      };
-
-      const { shoulder, elbow, wrist, joints } = phantom2D;
-      const pixelFromPoint = (pt) => ({ x: pt.x * vw, y: pt.y * vh });
-
-      ctx.lineWidth = 4; ctx.strokeStyle = '#FF00FF';
-      if (shoulder && elbow) {
-        const s = pixelFromPoint(shoulder); const e = pixelFromPoint(elbow);
-        ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(e.x, e.y); ctx.stroke();
-        drawCircle(s.x,s.y,6,'#FF00FF'); drawCircle(e.x,e.y,6,'#FF00FF');
-      }
-      if (elbow && wrist) {
-        const e = pixelFromPoint(elbow); const w = pixelFromPoint(wrist);
-        ctx.beginPath(); ctx.moveTo(e.x, e.y); ctx.lineTo(w.x, w.y); ctx.stroke();
-        drawCircle(w.x,w.y,6,'#00FFCC');
-      }
-
-      if (Array.isArray(joints)) {
-        ctx.strokeStyle = '#00FFCC'; ctx.lineWidth = 2;
-        const fingerChains = [
-          [0,1,2,3,4], [0,5,6,7,8], [5,9,10,11,12], [9,13,14,15,16], [0,17,18,19,20]
-        ];
-        fingerChains.forEach(chain => {
-          let prev = null;
-          chain.forEach(i => {
-            const pt = joints[i];
-            if (!pt) return;
-            const p = pixelFromPoint(pt);
-            drawCircle(p.x, p.y, 3, '#00FFCC');
-            if (prev) {
-              ctx.beginPath(); ctx.moveTo(prev.x, prev.y); ctx.lineTo(p.x, p.y); ctx.stroke();
-            }
-            prev = p;
-          });
-        });
-      }
-    }
-  }, []);
-
-  const { sceneRef, initThreeJS, startRenderLoop, stopRenderLoop, initMediaPipe, destroy } = useMirrorEngine({ configRef, onLandmarksUpdate });
+  useEffect(() => { landmarksHandlerRef.current = onLandmarksUpdate; });
 
   const onFrame = useCallback((dt) => {
     const pair = targetPairRef.current;
     if (!pair) return;
-  
-    pair.a.mesh.rotation.y += 1.0 * dt;
-    pair.b.mesh.rotation.y += 1.0 * dt;
-  
+    for (const target of [pair.a, pair.b]) {
+      target.mesh.rotation.y += 1.0 * dt;
+      target.mesh.rotation.x += 0.4 * dt;
+    }
     for (let i = particlesRef.current.length - 1; i >= 0; i--) {
       const p = particlesRef.current[i];
       p.mesh.position.add(p.vel);
-      p.life -= 1.8 * dt;
+      p.life -= 1.6 * dt;
       p.mesh.material.opacity = Math.max(0, p.life);
       if (p.life <= 0) {
-        sceneRef.current.remove(p.mesh);
+        sceneRef.current?.remove(p.mesh);
         p.mesh.geometry.dispose();
         p.mesh.material.dispose();
         particlesRef.current.splice(i, 1);
@@ -247,56 +227,51 @@ export const TherapyGame = ({ profile, onNavigate }) => {
     }
   }, [sceneRef]);
 
-  const finishSession = useCallback(() => {
-    setGameState('finished');
+  const finishSession = useCallback(async () => {
+    setGameState('saving');
     stopRenderLoop();
     destroy();
+    setAccuracy(
+      statsRef.current.spawned > 0
+        ? Math.round((statsRef.current.hits / statsRef.current.spawned) * 100)
+        : 0,
+    );
+    setGameState('finished');
   }, [destroy, stopRenderLoop]);
 
   const startSession = useCallback(() => {
-    statsRef.current = { hits: 0, spawned: 1, peakROM: 0, startPos: null };
+    statsRef.current = { hits: 0, spawned: 1, startTime: Date.now(), endTime: null, peakROM: 0, telemetry: [], startPos: null };
     configRef.current.hoverAccumMs = 0;
     setTargetsHit(0);
     setTargetsSpawned(1);
+    setSecondsLeft(configRef.current.prescribedDuration || 120);
     setHoverPct(0);
     setGameState('running');
   }, []);
 
-  const handleExitGame = useCallback(() => {
-    stopRenderLoop();
-    destroy();
-    if (onNavigate) {
-      onNavigate('dashboard');
-    } else {
-      window.location.reload();
-    }
-  }, [destroy, stopRenderLoop, onNavigate]);
-
   useEffect(() => {
     if (gameState !== 'running') return;
     const scene = initThreeJS(canvasRef.current, containerRef.current);
-
     const tA = makeTargetMesh(scene);
     const tB = makeTargetMesh(scene);
     spawnTargetPair(tA, tB, configRef);
-    targetPairRef.current = { a: tA, b: tB };
-    
+    targetPairRef.current   = { a: tA, b: tB };
     debugPointerRef.current = makeDebugPointer(scene);
-    particlesRef.current = [];
-
+    particlesRef.current    = [];
     startRenderLoop(onFrame);
     initMediaPipe(videoRef.current);
-
     return () => {
       stopRenderLoop();
       destroy();
+      targetPairRef.current   = null;
+      debugPointerRef.current = null;
     };
-  }, [gameState, initThreeJS, startRenderLoop, onFrame, initMediaPipe, destroy]);
+  }, [gameState, initThreeJS, startRenderLoop, onFrame, initMediaPipe, destroy, stopRenderLoop]);
 
   useEffect(() => {
     if (gameState !== 'running') return;
     const id = setInterval(() => {
-      setSecondsLeft(prev => {
+      setSecondsLeft((prev) => {
         if (prev <= 1) { clearInterval(id); finishSession(); return 0; }
         return prev - 1;
       });
@@ -304,54 +279,97 @@ export const TherapyGame = ({ profile, onNavigate }) => {
     return () => clearInterval(id);
   }, [gameState, finishSession]);
 
+  const mm = String(Math.floor(secondsLeft / 60)).padStart(2, '0');
+  const ss = String(secondsLeft % 60).padStart(2, '0');
+
   return (
-    <div style={{ width: '100%', height: '100%' }}>
+    <div className={'animate-fade-in ' + (gameState === 'running' ? 'mirror-session-shell' : '')}
+      style={{ width: '100%', height: '100%' }}>
+
       {gameState === 'ready' && (
-        <div style={{ maxWidth: 450, margin: '100px auto', textAlign: 'center', color: '#fff', background: '#222', padding: 32, borderRadius: 12 }}>
-          <h3>Mirror Therapy Game</h3>
-          <p style={{ opacity: 0.8, fontSize: '0.9rem', marginBottom: 20 }}>Align your hand over the target spheres to lock and destroy them.</p>
-          <div style={{ display: 'flex', gap: '15px', justifyContent: 'center' }}>
-            <button style={{ background: '#00ffcc', padding: '12px 24px', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 'bold', color: '#111' }} onClick={startSession}>
-              <PlayIcon /> Start Practice
-            </button>
-            <button style={{ background: '#ff3333', padding: '12px 24px', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 'bold', color: '#fff' }} onClick={handleExitGame}>
-              Exit Game
-            </button>
-          </div>
+        <div className="glass-panel p-8" style={{ maxWidth: 580, margin: '60px auto', textAlign: 'center' }}>
+          <h2>Calibration Complete</h2>
+          <p style={{ marginTop: 12, opacity: 0.8 }}>
+            Show your <strong>{configRef.current.amputationSide === 'LEFT' ? 'right' : 'left'}</strong> hand
+            to the camera to begin.
+          </p>
+          <button className="btn btn-primary mt-4" onClick={startSession}>
+            <PlayIcon className="w-5 h-5" /> Start Practice
+          </button>
         </div>
       )}
 
       {gameState === 'running' && (
-        <div style={{ position: 'fixed', inset: 0, overflow: 'hidden', backgroundColor: '#000', zIndex: 99 }}>
-          <video ref={videoRef} className="mirror-camera-feed" autoPlay playsInline muted style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', transform: 'scaleX(-1)', zIndex: 1 }} />
-          
-          <div ref={containerRef} style={{ position: 'absolute', inset: 0, zIndex: 2, pointerEvents: 'none' }}>
+        <div className="mirror-session-stage" style={{
+          position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
+          overflow: 'hidden', backgroundColor: '#000', zIndex: 99,
+        }}>
+          <video ref={videoRef} className="mirror-camera-feed" autoPlay playsInline muted
+            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+              objectFit: 'contain', transform: 'scaleX(-1)', zIndex: 1 }} />
+
+          <div ref={containerRef} className="mirror-canvas-layer"
+            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+              zIndex: 2, pointerEvents: 'none' }}>
             <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block' }} />
-            <canvas ref={overlayRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', transform: 'scaleX(-1)', zIndex: 20 }} />
           </div>
 
-          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 3, display: 'flex', gap: '30px', padding: '20px', background: 'linear-gradient(rgba(0,0,0,0.8), transparent)', alignItems: 'center' }}>
-            <div style={{ color: '#fff', fontFamily: 'monospace', fontSize: '1.3rem' }}>Time: {secondsLeft}s</div>
-            <div style={{ color: '#00FFCC', fontFamily: 'monospace', fontSize: '1.3rem' }}>Targets: {targetsHit}</div>
-            {hoverPct > 0 && <div style={{ color: '#ffb703', fontWeight: 'bold', fontSize: '1.2rem' }}>Target Lock: {hoverPct}%</div>}
-            
-            <div style={{ marginLeft: 'auto', display: 'flex', gap: '12px' }}>
-              <button style={{ background: '#555', color: '#fff', border: 'none', padding: '8px 20px', borderRadius: 4, cursor: 'pointer', fontWeight: 'bold' }} onClick={finishSession}>Stop</button>
-              <button style={{ background: '#ff3333', color: '#fff', border: 'none', padding: '8px 20px', borderRadius: 4, cursor: 'pointer', fontWeight: 'bold' }} onClick={handleExitGame}>Exit</button>
+          <div className="mirror-hud mirror-hud-top" style={{
+            position: 'absolute', top: 0, left: 0, right: 0, zIndex: 3,
+            display: 'flex', alignItems: 'center', padding: '20px 30px',
+            background: 'linear-gradient(to bottom, rgba(0,0,0,0.8), transparent)',
+          }}>
+            <div style={{ color: '#fff', marginRight: 30, fontSize: '1.4rem', fontFamily: 'monospace' }}>
+              <strong>{mm}:{ss}</strong>
             </div>
+            <div style={{ color: '#00FFCC', fontSize: '1.4rem', fontFamily: 'monospace' }}>
+              <strong>Hits: {targetsHit}/{targetsSpawned}</strong>
+            </div>
+            {hoverPct > 0 && (
+              <div className="font-bold animate-pulse"
+                style={{ color: '#ffb703', marginLeft: 25, fontSize: '1.2rem' }}>
+                Target Lock {hoverPct}%
+              </div>
+            )}
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: 12, alignItems: 'center' }}>
+              {peakROM > 0 && (
+                <span style={{ color: '#aaa', fontFamily: 'monospace', fontSize: '0.9rem' }}>
+                  ROM {peakROM}&#xb0;
+                </span>
+              )}
+              <button className="btn btn-secondary" onClick={finishSession}
+                style={{ padding: '10px 24px', fontSize: '1rem', cursor: 'pointer' }}>End</button>
+            </div>
+          </div>
+
+          <div style={{ position: 'absolute', right: 18, bottom: 18, zIndex: 4,
+            background: 'rgba(0,0,0,0.5)', color: '#fff', padding: '8px 12px',
+            borderRadius: 8, fontSize: 12, fontFamily: 'monospace', textAlign: 'left' }}>
+            <div style={{ fontWeight: 'bold', marginBottom: 6 }}>Camera Status</div>
+            <div>Stream: {videoRef.current?.srcObject ? 'connected' : 'none'}</div>
+            <div>ReadyState: {videoRef.current?.readyState ?? 'n/a'}</div>
+            <div>Paused: {videoRef.current ? String(videoRef.current.paused) : 'n/a'}</div>
+            <div style={{ marginTop: 6, opacity: 0.9 }}>Check browser permissions if no stream.</div>
           </div>
         </div>
       )}
 
+      {gameState === 'saving' && (
+        <div className="glass-panel p-8" style={{ maxWidth: 580, margin: '40px auto', textAlign: 'center' }}>
+          <h2>Saving session&#x2026;</h2>
+        </div>
+      )}
+
       {gameState === 'finished' && (
-        <div style={{ maxWidth: 400, margin: '100px auto', textAlign: 'center', color: '#fff', background: '#222', padding: 24, borderRadius: 12 }}>
-          <h3 style={{ color: '#00ffcc' }}>Session Complete!</h3>
-          <p>Total Targets Hit: {targetsHit}</p>
-          <p>Max Range of Motion: {peakROM}°</p>
-          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginTop: 20 }}>
-            <button style={{ background: '#00ffcc', padding: '10px 20px', border: 'none', borderRadius: 4, cursor: 'pointer', fontWeight: 'bold', color: '#111' }} onClick={() => setGameState('ready')}>Restart</button>
-            <button style={{ background: '#555', padding: '10px 20px', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#fff' }} onClick={handleExitGame}>Dashboard</button>
-          </div>
+        <div className="glass-panel p-8" style={{ maxWidth: 580, margin: '40px auto', textAlign: 'center' }}>
+          <h2 className="text-green-400">Session Complete</h2>
+          <p style={{ marginTop: 12 }}>Targets Hit: <strong>{targetsHit}</strong></p>
+          <p>Accuracy: <strong>{accuracy}%</strong></p>
+          {peakROM > 0 && <p>Peak ROM: <strong>{peakROM}&#xb0;</strong></p>}
+          <button className="btn btn-primary mt-4"
+            onClick={() => { setGameState('ready'); setSecondsLeft(configRef.current.prescribedDuration || 120); }}>
+            Restart Session
+          </button>
         </div>
       )}
     </div>
