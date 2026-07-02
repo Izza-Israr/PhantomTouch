@@ -55,10 +55,12 @@ function spawnTargetPair(targetA, targetB, configRef) {
   targetA.mesh.position.set(xReal    * xOffset, y, 0);
   targetA.light.position.copy(targetA.mesh.position);
   targetA.mesh.scale.set(1, 1, 1);
+  targetA.userData = { originalPosition: targetA.mesh.position.clone() };
 
   targetB.mesh.position.set(xPhantom * xOffset, y, 0);
   targetB.light.position.copy(targetB.mesh.position);
   targetB.mesh.scale.set(1, 1, 1);
+  targetB.userData = { originalPosition: targetB.mesh.position.clone() };
 }
 
 function burstParticles(scene, pos, toneHex, particlesRef) {
@@ -138,22 +140,50 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
     if (!targetA || !targetB) return;
 
     // Shoulder transformation logic removed here to allow targets to stay fixed in world coordinates
-
     const indexTip = real[8];
     const thumbTip = real[4];
     if (!indexTip || !thumbTip) return;
 
     const pinchX = (indexTip.x + thumbTip.x) / 2;
     const pinchY = (indexTip.y + thumbTip.y) / 2;
+    
+    // Check distance against target A's ORIGINAL fixed position so the 
+    // magnetic snap doesn't cause it to follow the hand and lock infinitely.
+    const basePosA = targetA.userData?.originalPosition || targetA.mesh.position;
+    const distA = Math.hypot(
+      pinchX - basePosA.x,
+      pinchY - basePosA.y,
+    );
+
+    // Dynamically update Target B's resting position relative to the phantom shoulder
+    // so it maintains the exact same offset as Target A has to the real shoulder.
+    const realSh = real[21];
+    const phanSh = phantom[21];
+    if (realSh && phanSh && targetB.userData?.originalPosition && targetA.userData?.originalPosition) {
+      const dx = targetA.userData.originalPosition.x - realSh.x;
+      const dy = targetA.userData.originalPosition.y - realSh.y;
+      
+      // Mirror the X offset, preserve the Y offset
+      targetB.mesh.position.x = phanSh.x - dx;
+      targetB.mesh.position.y = phanSh.y + dy;
+      targetB.light.position.copy(targetB.mesh.position);
+    }
+
+    // Phantom pinch coordinates
+    const phanIndex = phantom[8];
+    const phanThumb = phantom[4];
+    let phanPinch = null;
+    if (phanIndex && phanThumb) {
+      phanPinch = new THREE.Vector3(
+        (phanIndex.x + phanThumb.x) / 2,
+        (phanIndex.y + phanThumb.y) / 2,
+        0
+      );
+    }
 
     if (debugPointerRef.current) {
       debugPointerRef.current.position.set(pinchX, pinchY, 0.05);
     }
-
-    const distA = Math.hypot(
-      pinchX - targetA.mesh.position.x,
-      pinchY - targetA.mesh.position.y,
-    );
 
     if (distA < 0.70) {
       configRef.current.hoverAccumMs += 25;
