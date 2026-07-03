@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { useMirrorEngine } from '../hooks/useMirrorEngine';
 import { PlayIcon } from './Icons';
 
+// ─── Audio ───────────────────────────────────────────────────────────────────
 function playSuccessChime() {
   try {
     const Ctx = window.AudioContext || window.webkitAudioContext;
@@ -10,19 +11,31 @@ function playSuccessChime() {
     const ctx  = new Ctx();
     const osc  = ctx.createOscillator();
     const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
+    osc.connect(gain); gain.connect(ctx.destination);
     osc.type = 'triangle';
     const t = ctx.currentTime;
     osc.frequency.setValueAtTime(523.25, t);
     osc.frequency.exponentialRampToValueAtTime(880, t + 0.18);
     gain.gain.setValueAtTime(0.15, t);
     gain.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
-    osc.start(t);
-    osc.stop(t + 0.3);
+    osc.start(t); osc.stop(t + 0.3);
   } catch (_) {}
 }
 
+// ─── Level metadata ───────────────────────────────────────────────────────────
+// xOffset range (world units) and reference joint index for game logic.
+// Lower amputations have smaller reach so targets spawn closer.
+// Reference joint = the highest real joint at the stump boundary,
+// used to anchor the phantom target relative to the real arm target.
+const LEVEL_META = {
+  TRANSHUMERAL:          { label: 'Transhumeral (Above Elbow)', xMin: 1.2, xMax: 3.2, refJoint: 21 },
+  TRANSRADIAL:           { label: 'Transradial (Below Elbow)',  xMin: 0.8, xMax: 2.5, refJoint: 22 },
+  WRIST_DISARTICULATION: { label: 'Wrist Disarticulation',      xMin: 0.5, xMax: 1.8, refJoint: 23 },
+  FINGERS_ONLY:          { label: 'Fingers Only',               xMin: 0.3, xMax: 1.2, refJoint: 23 },
+};
+const LEVEL_KEYS = Object.keys(LEVEL_META);
+
+// ─── Three.js helpers ─────────────────────────────────────────────────────────
 function makeTargetMesh(scene) {
   const geo  = new THREE.IcosahedronGeometry(0.4, 1);
   const mat  = new THREE.MeshPhongMaterial({
@@ -31,8 +44,7 @@ function makeTargetMesh(scene) {
   });
   const mesh  = new THREE.Mesh(geo, mat);
   const light = new THREE.PointLight(0x00f5ff, 1.8, 6);
-  scene.add(mesh);
-  scene.add(light);
+  scene.add(mesh); scene.add(light);
   return { mesh, light };
 }
 
@@ -46,11 +58,14 @@ function makeDebugPointer(scene) {
 }
 
 function spawnTargetPair(targetA, targetB, configRef) {
-  const side     = configRef.current.amputationSide || 'LEFT';
+  const side  = configRef.current.amputationSide  || 'LEFT';
+  const level = configRef.current.amputationLevel || 'TRANSHUMERAL';
+  const meta  = LEVEL_META[level] || LEVEL_META.TRANSHUMERAL;
+
   const xPhantom = side === 'LEFT' ? -1 : 1;
   const xReal    = -xPhantom;
-  const xOffset  = 1.2 + Math.random() * 2.0;
-  const y        = -1.2 + Math.random() * 2.4;
+  const xOffset  = meta.xMin + Math.random() * (meta.xMax - meta.xMin);
+  const y        = -1.0 + Math.random() * 2.0;
 
   targetA.mesh.position.set(xReal    * xOffset, y, 0);
   targetA.light.position.copy(targetA.mesh.position);
@@ -85,6 +100,7 @@ function burstParticles(scene, pos, toneHex, particlesRef) {
   }
 }
 
+// ─── Component ────────────────────────────────────────────────────────────────
 export const TherapyGame = ({ user, profile, onNavigate }) => {
   const [gameState,      setGameState]      = useState('ready');
   const [secondsLeft,    setSecondsLeft]    = useState(120);
@@ -94,8 +110,12 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
   const [accuracy,       setAccuracy]       = useState(0);
   const [hoverPct,       setHoverPct]       = useState(0);
 
-  // null = not yet chosen; 'LEFT' or 'RIGHT' = amputated side selected by user
-  const [amputationSide, setAmputationSide] = useState(profile?.amputationSide || null);
+  // Setup wizard steps: null = not chosen yet
+  const [amputationSide,  setAmputationSide]  = useState(profile?.amputationSide  || null);
+  const [amputationLevel, setAmputationLevel] = useState(profile?.amputationLevel || null);
+
+  // Step: 'side' | 'level' | 'confirm'
+  const setupStep = !amputationSide ? 'side' : !amputationLevel ? 'level' : 'confirm';
 
   const containerRef = useRef(null);
   const canvasRef    = useRef(null);
@@ -107,8 +127,8 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
   });
 
   const configRef = useRef({
-    amputationSide:           profile?.amputationSide      || 'LEFT', // overwritten by selectSide before session
-    amputationLevel:          profile?.amputationLevel     || 'FULL',
+    amputationSide:           profile?.amputationSide      || 'LEFT',
+    amputationLevel:          profile?.amputationLevel     || 'TRANSHUMERAL',
     meshScaleMultiplier:      profile?.meshScaleMultiplier || 1.0,
     skinToneSliderHex:        profile?.skinToneSliderHex   || '#aa3bff',
     prescribedDuration:       120,
@@ -123,71 +143,75 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
   const gameStateRef    = useRef('ready');
   useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
 
+  // ── Setup wizard handlers ─────────────────────────────────────────────────
+  const selectSide = useCallback((side) => {
+    if (side !== null) configRef.current.amputationSide = side;
+    setAmputationSide(side);
+  }, []);
+
+  const selectLevel = useCallback((lvl) => {
+    if (lvl !== null) configRef.current.amputationLevel = lvl;
+    setAmputationLevel(lvl);
+  }, []);
+
+  const resetSetup = useCallback(() => {
+    setAmputationSide(profile?.amputationSide  || null);
+    setAmputationLevel(profile?.amputationLevel || null);
+  }, [profile]);
+
+  // ── Landmarks relay (stable ref to avoid hook re-init) ────────────────────
   const landmarksHandlerRef = useRef(null);
   const stableRelay = useCallback((data) => {
     landmarksHandlerRef.current?.(data);
   }, []);
 
   const {
-    sceneRef,
-    initThreeJS,
-    startRenderLoop,
-    stopRenderLoop,
-    initMediaPipe,
-    destroy,
+    sceneRef, initThreeJS, startRenderLoop, stopRenderLoop, initMediaPipe, destroy,
   } = useMirrorEngine({ configRef, onLandmarksUpdate: stableRelay });
 
+  // ── Landmark handler (game logic) ─────────────────────────────────────────
   const handleLandmarks = useCallback((real, phantom) => {
     if (!targetPairRef.current || gameStateRef.current !== 'running' || !real || !phantom) return;
     const { a: targetA, b: targetB } = targetPairRef.current;
     if (!targetA || !targetB) return;
 
-    // Shoulder transformation logic removed here to allow targets to stay fixed in world coordinates
+    const level = configRef.current.amputationLevel || 'TRANSHUMERAL';
+    const meta  = LEVEL_META[level] || LEVEL_META.TRANSHUMERAL;
+
+    // Real-side pinch (healthy hand)
     const indexTip = real[8];
     const thumbTip = real[4];
     if (!indexTip || !thumbTip) return;
 
     const pinchX = (indexTip.x + thumbTip.x) / 2;
     const pinchY = (indexTip.y + thumbTip.y) / 2;
-    
-    // Check distance against target A's ORIGINAL fixed position so the 
-    // magnetic snap doesn't cause it to follow the hand and lock infinitely.
-    const basePosA = targetA.userData?.originalPosition || targetA.mesh.position;
-    const distA = Math.hypot(
-      pinchX - basePosA.x,
-      pinchY - basePosA.y,
-    );
 
-    // Dynamically update Target B's resting position relative to the phantom shoulder
-    // so it maintains the exact same offset as Target A has to the real shoulder.
-    const realSh = real[21];
-    const phanSh = phantom[21];
-    if (realSh && phanSh && targetB.userData?.originalPosition && targetA.userData?.originalPosition) {
-      const dx = targetA.userData.originalPosition.x - realSh.x;
-      const dy = targetA.userData.originalPosition.y - realSh.y;
-      
-      // Mirror the X offset, preserve the Y offset
-      targetB.mesh.position.x = phanSh.x - dx;
-      targetB.mesh.position.y = phanSh.y + dy;
+    // Distance to real target (check against fixed spawn position)
+    const basePosA = targetA.userData?.originalPosition || targetA.mesh.position;
+    const distA    = Math.hypot(pinchX - basePosA.x, pinchY - basePosA.y);
+
+    // Anchor phantom target relative to the correct reference joint for this level.
+    // TRANSHUMERAL → shoulder (21), TRANSRADIAL → elbow (22), others → wrist (23)
+    const refJoint = meta.refJoint;
+    const realRef  = real[refJoint];
+    const phanRef  = phantom[refJoint];
+
+    if (realRef && phanRef && targetB.userData?.originalPosition && targetA.userData?.originalPosition) {
+      const dx = targetA.userData.originalPosition.x - realRef.x;
+      const dy = targetA.userData.originalPosition.y - realRef.y;
+      targetB.mesh.position.x = phanRef.x - dx;
+      targetB.mesh.position.y = phanRef.y + dy;
       targetB.light.position.copy(targetB.mesh.position);
     }
 
-    // Phantom pinch coordinates
+    // Phantom pinch (for future bilateral support or visual feedback)
     const phanIndex = phantom[8];
     const phanThumb = phantom[4];
-    let phanPinch = null;
-    if (phanIndex && phanThumb) {
-      phanPinch = new THREE.Vector3(
-        (phanIndex.x + phanThumb.x) / 2,
-        (phanIndex.y + phanThumb.y) / 2,
-        0
-      );
-    }
-
-    if (debugPointerRef.current) {
+    if (phanIndex && phanThumb && debugPointerRef.current) {
       debugPointerRef.current.position.set(pinchX, pinchY, 0.05);
     }
 
+    // Hover / dwell on real target
     if (distA < 0.70) {
       configRef.current.hoverAccumMs += 25;
       const pct = Math.min(100,
@@ -216,6 +240,7 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
         (configRef.current.hoverAccumMs / configRef.current.requiredHoverDwellTimeMs) * 100));
     }
 
+    // ROM tracking (healthy wrist)
     const wrist = real[0];
     if (wrist) {
       const currentPos = new THREE.Vector3(wrist.x, wrist.y, wrist.z);
@@ -231,14 +256,6 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
     }
   }, [sceneRef]);
 
-  // Called from the side-selection screen; commits the choice into configRef
-  // so that useMirrorEngine and spawnTargetPair both read the correct side.
-  // Passing null just goes back to the picker without touching configRef.
-  const selectSide = useCallback((side) => {
-    if (side !== null) configRef.current.amputationSide = side;
-    setAmputationSide(side);
-  }, []);
-
   const onLandmarksUpdate = useCallback((data) => {
     if (!data) return;
     const { real, phantom } = data;
@@ -247,6 +264,7 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
 
   useEffect(() => { landmarksHandlerRef.current = onLandmarksUpdate; });
 
+  // ── Render loop frame ──────────────────────────────────────────────────────
   const onFrame = useCallback((dt) => {
     const pair = targetPairRef.current;
     if (!pair) return;
@@ -261,17 +279,16 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
       p.mesh.material.opacity = Math.max(0, p.life);
       if (p.life <= 0) {
         sceneRef.current?.remove(p.mesh);
-        p.mesh.geometry.dispose();
-        p.mesh.material.dispose();
+        p.mesh.geometry.dispose(); p.mesh.material.dispose();
         particlesRef.current.splice(i, 1);
       }
     }
   }, [sceneRef]);
 
+  // ── Session control ────────────────────────────────────────────────────────
   const finishSession = useCallback(async () => {
     setGameState('saving');
-    stopRenderLoop();
-    destroy();
+    stopRenderLoop(); destroy();
     setAccuracy(
       statsRef.current.spawned > 0
         ? Math.round((statsRef.current.hits / statsRef.current.spawned) * 100)
@@ -281,10 +298,12 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
   }, [destroy, stopRenderLoop]);
 
   const startSession = useCallback(() => {
-    statsRef.current = { hits: 0, spawned: 1, startTime: Date.now(), endTime: null, peakROM: 0, telemetry: [], startPos: null };
+    statsRef.current = {
+      hits: 0, spawned: 1, startTime: Date.now(), endTime: null,
+      peakROM: 0, telemetry: [], startPos: null,
+    };
     configRef.current.hoverAccumMs = 0;
-    setTargetsHit(0);
-    setTargetsSpawned(1);
+    setTargetsHit(0); setTargetsSpawned(1);
     setSecondsLeft(configRef.current.prescribedDuration || 120);
     setHoverPct(0);
     setGameState('running');
@@ -302,10 +321,8 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
     startRenderLoop(onFrame);
     initMediaPipe(videoRef.current);
     return () => {
-      stopRenderLoop();
-      destroy();
-      targetPairRef.current   = null;
-      debugPointerRef.current = null;
+      stopRenderLoop(); destroy();
+      targetPairRef.current = null; debugPointerRef.current = null;
     };
   }, [gameState, initThreeJS, startRenderLoop, onFrame, initMediaPipe, destroy, stopRenderLoop]);
 
@@ -323,71 +340,146 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
   const mm = String(Math.floor(secondsLeft / 60)).padStart(2, '0');
   const ss = String(secondsLeft % 60).padStart(2, '0');
 
+  // ── Shared card style ──────────────────────────────────────────────────────
+  const cardStyle = { maxWidth: 560, margin: '60px auto', textAlign: 'center' };
+  const subtitleStyle = { marginTop: 10, opacity: 0.75, fontSize: '0.95rem' };
+  const btnRowStyle   = { display: 'flex', gap: 16, justifyContent: 'center', marginTop: 28 };
+
   return (
-    <div className={'animate-fade-in ' + (gameState === 'running' ? 'mirror-session-shell' : '')}
-      style={{ width: '100%', height: '100%' }}>
+    <div
+      className={'animate-fade-in ' + (gameState === 'running' ? 'mirror-session-shell' : '')}
+      style={{ width: '100%', height: '100%' }}
+    >
 
-      {gameState === 'ready' && !amputationSide && (
-        <div className="glass-panel p-8" style={{ maxWidth: 560, margin: '60px auto', textAlign: 'center' }}>
-          <h2>Which side is amputated?</h2>
-          <p style={{ marginTop: 10, opacity: 0.75, fontSize: '0.95rem' }}>
-            We'll mirror your healthy hand to create the phantom on the amputated side.
-          </p>
-          <div style={{ display: 'flex', gap: 20, justifyContent: 'center', marginTop: 28 }}>
-            {['LEFT', 'RIGHT'].map((side) => (
-              <button
-                key={side}
-                className="btn btn-primary"
-                style={{ minWidth: 130, fontSize: '1.1rem', padding: '14px 28px' }}
-                onClick={() => selectSide(side)}
-              >
-                {side === 'LEFT' ? '✋ Left' : 'Right ✋'}
-              </button>
-            ))}
-          </div>
-        </div>
+      {/* ── SETUP WIZARD ─────────────────────────────────────────────────── */}
+      {gameState === 'ready' && (
+        <>
+          {/* Step 1 — pick amputated side */}
+          {setupStep === 'side' && (
+            <div className="glass-panel p-8" style={cardStyle}>
+              <h2>Which side is amputated?</h2>
+              <p style={subtitleStyle}>
+                Your healthy hand is mirrored to create the phantom on the amputated side.
+              </p>
+              <div style={btnRowStyle}>
+                {[['LEFT', '✋ Left'], ['RIGHT', 'Right ✋']].map(([val, label]) => (
+                  <button
+                    key={val}
+                    className="btn btn-primary"
+                    style={{ minWidth: 130, fontSize: '1.1rem', padding: '14px 28px' }}
+                    onClick={() => selectSide(val)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Step 2 — pick amputation level */}
+          {setupStep === 'level' && (
+            <div className="glass-panel p-8" style={{ ...cardStyle, maxWidth: 600 }}>
+              <h2>What is the amputation level?</h2>
+              <p style={subtitleStyle}>
+                This controls how much of the phantom arm is rendered.
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 24 }}>
+                {LEVEL_KEYS.map((key) => (
+                  <button
+                    key={key}
+                    className="btn btn-primary"
+                    style={{ width: '100%', padding: '14px 20px', fontSize: '1rem', textAlign: 'left' }}
+                    onClick={() => selectLevel(key)}
+                  >
+                    <span style={{ fontWeight: 700 }}>{LEVEL_META[key].label}</span>
+                    <span style={{ marginLeft: 10, opacity: 0.65, fontSize: '0.85rem' }}>
+                      {key === 'TRANSHUMERAL'          && '— shoulder, elbow, wrist & hand phantom'}
+                      {key === 'TRANSRADIAL'           && '— elbow stump: forearm, wrist & hand phantom'}
+                      {key === 'WRIST_DISARTICULATION' && '— wrist stump: hand phantom only'}
+                      {key === 'FINGERS_ONLY'          && '— wrist intact: finger phantom only'}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <div style={{ ...btnRowStyle, marginTop: 20 }}>
+                <button className="btn btn-secondary" style={{ padding: '10px 22px' }}
+                  onClick={() => selectSide(null)}>
+                  ← Change Side
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 3 — confirm & start */}
+          {setupStep === 'confirm' && (
+            <div className="glass-panel p-8" style={cardStyle}>
+              <h2>Ready to Start</h2>
+
+              {/* Summary badges */}
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 14 }}>
+                <span style={badgeStyle('#1a1a3e')}>
+                  Side: <strong>{amputationSide}</strong>
+                </span>
+                <span style={badgeStyle('#1a1a3e')}>
+                  Level: <strong>{LEVEL_META[amputationLevel]?.label}</strong>
+                </span>
+              </div>
+
+              <p style={{ marginTop: 16, opacity: 0.8 }}>
+                Show your{' '}
+                <strong>{amputationSide === 'LEFT' ? 'right' : 'left'}</strong> hand
+                to the camera — the phantom will appear on your{' '}
+                <strong>{amputationSide.toLowerCase()}</strong> side.
+              </p>
+
+              {/* Level-specific hint */}
+              <p style={{ marginTop: 8, opacity: 0.6, fontSize: '0.875rem' }}>
+                {amputationLevel === 'TRANSHUMERAL' &&
+                  'Full phantom arm (shoulder → elbow → wrist → fingers) will be rendered.'}
+                {amputationLevel === 'TRANSRADIAL' &&
+                  'Phantom shows from your elbow stump down — forearm, wrist and fingers.'}
+                {amputationLevel === 'WRIST_DISARTICULATION' &&
+                  'Phantom shows hand only, anchored to your wrist stump.'}
+                {amputationLevel === 'FINGERS_ONLY' &&
+                  'Only phantom fingers are rendered, anchored to your real wrist.'}
+              </p>
+
+              <div style={btnRowStyle}>
+                <button className="btn btn-secondary" style={{ padding: '10px 22px' }}
+                  onClick={() => selectLevel(null)}>
+                  ← Change Level
+                </button>
+                <button className="btn btn-primary" style={{ padding: '12px 28px' }}
+                  onClick={startSession}>
+                  <PlayIcon className="w-5 h-5" /> Start Practice
+                </button>
+              </div>
+            </div>
+          )}
+        </>
       )}
 
-      {gameState === 'ready' && amputationSide && (
-        <div className="glass-panel p-8" style={{ maxWidth: 560, margin: '60px auto', textAlign: 'center' }}>
-          <h2>Ready to Start</h2>
-          <p style={{ marginTop: 10, opacity: 0.75, fontSize: '0.95rem' }}>
-            Amputated side: <strong>{amputationSide}</strong>
-          </p>
-          <p style={{ marginTop: 8, opacity: 0.8 }}>
-            Show your <strong>{amputationSide === 'LEFT' ? 'right' : 'left'}</strong> hand
-            to the camera — the phantom will appear on your <strong>{amputationSide.toLowerCase()}</strong> side.
-          </p>
-          <div style={{ display: 'flex', gap: 14, justifyContent: 'center', marginTop: 28 }}>
-            <button
-              className="btn btn-secondary"
-              style={{ padding: '10px 22px' }}
-              onClick={() => selectSide(null)}
-            >
-              ← Change Side
-            </button>
-            <button className="btn btn-primary" style={{ padding: '12px 28px' }} onClick={startSession}>
-              <PlayIcon className="w-5 h-5" /> Start Practice
-            </button>
-          </div>
-        </div>
-      )}
-
+      {/* ── RUNNING SESSION ──────────────────────────────────────────────────── */}
       {gameState === 'running' && (
         <div className="mirror-session-stage" style={{
           position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
           overflow: 'hidden', backgroundColor: '#000', zIndex: 99,
         }}>
           <video ref={videoRef} className="mirror-camera-feed" autoPlay playsInline muted
-            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
-              objectFit: 'contain', transform: 'scaleX(-1)', zIndex: 1 }} />
+            style={{
+              position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+              objectFit: 'contain', transform: 'scaleX(-1)', zIndex: 1,
+            }} />
 
           <div ref={containerRef} className="mirror-canvas-layer"
-            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
-              zIndex: 2, pointerEvents: 'none' }}>
+            style={{
+              position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+              zIndex: 2, pointerEvents: 'none',
+            }}>
             <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block' }} />
           </div>
 
+          {/* HUD */}
           <div className="mirror-hud mirror-hud-top" style={{
             position: 'absolute', top: 0, left: 0, right: 0, zIndex: 3,
             display: 'flex', alignItems: 'center', padding: '20px 30px',
@@ -406,19 +498,28 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
               </div>
             )}
             <div style={{ marginLeft: 'auto', display: 'flex', gap: 12, alignItems: 'center' }}>
+              {/* Level badge in HUD */}
+              <span style={badgeStyle('rgba(255,255,255,0.1)')}>
+                {LEVEL_META[configRef.current.amputationLevel]?.label}
+              </span>
               {peakROM > 0 && (
                 <span style={{ color: '#aaa', fontFamily: 'monospace', fontSize: '0.9rem' }}>
                   ROM {peakROM}&#xb0;
                 </span>
               )}
               <button className="btn btn-secondary" onClick={finishSession}
-                style={{ padding: '10px 24px', fontSize: '1rem', cursor: 'pointer' }}>End</button>
+                style={{ padding: '10px 24px', fontSize: '1rem', cursor: 'pointer' }}>
+                End
+              </button>
             </div>
           </div>
 
-          <div style={{ position: 'absolute', right: 18, bottom: 18, zIndex: 4,
+          {/* Camera debug */}
+          <div style={{
+            position: 'absolute', right: 18, bottom: 18, zIndex: 4,
             background: 'rgba(0,0,0,0.5)', color: '#fff', padding: '8px 12px',
-            borderRadius: 8, fontSize: 12, fontFamily: 'monospace', textAlign: 'left' }}>
+            borderRadius: 8, fontSize: 12, fontFamily: 'monospace', textAlign: 'left',
+          }}>
             <div style={{ fontWeight: 'bold', marginBottom: 6 }}>Camera Status</div>
             <div>Stream: {videoRef.current?.srcObject ? 'connected' : 'none'}</div>
             <div>ReadyState: {videoRef.current?.readyState ?? 'n/a'}</div>
@@ -428,24 +529,28 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
         </div>
       )}
 
+      {/* ── SAVING ───────────────────────────────────────────────────────────── */}
       {gameState === 'saving' && (
-        <div className="glass-panel p-8" style={{ maxWidth: 580, margin: '40px auto', textAlign: 'center' }}>
+        <div className="glass-panel p-8" style={{ ...cardStyle, marginTop: 40 }}>
           <h2>Saving session&#x2026;</h2>
         </div>
       )}
 
+      {/* ── FINISHED ─────────────────────────────────────────────────────────── */}
       {gameState === 'finished' && (
-        <div className="glass-panel p-8" style={{ maxWidth: 580, margin: '40px auto', textAlign: 'center' }}>
+        <div className="glass-panel p-8" style={{ ...cardStyle, marginTop: 40 }}>
           <h2 className="text-green-400">Session Complete</h2>
           <p style={{ marginTop: 12 }}>Targets Hit: <strong>{targetsHit}</strong></p>
           <p>Accuracy: <strong>{accuracy}%</strong></p>
           {peakROM > 0 && <p>Peak ROM: <strong>{peakROM}&#xb0;</strong></p>}
-          <button className="btn btn-primary mt-4"
+          <button
+            className="btn btn-primary mt-4"
             onClick={() => {
               setGameState('ready');
               setSecondsLeft(configRef.current.prescribedDuration || 120);
-              setAmputationSide(profile?.amputationSide || null); // back to side picker
-            }}>
+              resetSetup(); // go back to the wizard
+            }}
+          >
             Restart Session
           </button>
         </div>
@@ -453,3 +558,16 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
     </div>
   );
 };
+
+// Small inline badge helper (not a component so no hooks rule applies)
+function badgeStyle(bg) {
+  return {
+    background: bg,
+    border: '1px solid rgba(255,255,255,0.15)',
+    borderRadius: 6,
+    padding: '4px 10px',
+    fontSize: '0.85rem',
+    color: '#fff',
+    whiteSpace: 'nowrap',
+  };
+}
