@@ -94,6 +94,9 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
   const [accuracy,       setAccuracy]       = useState(0);
   const [hoverPct,       setHoverPct]       = useState(0);
 
+  // null = not yet chosen; 'LEFT' or 'RIGHT' = amputated side selected by user
+  const [amputationSide, setAmputationSide] = useState(profile?.amputationSide || null);
+
   const containerRef = useRef(null);
   const canvasRef    = useRef(null);
   const videoRef     = useRef(null);
@@ -104,7 +107,7 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
   });
 
   const configRef = useRef({
-    amputationSide:           profile?.amputationSide      || 'LEFT',
+    amputationSide:           profile?.amputationSide      || 'LEFT', // overwritten by selectSide before session
     amputationLevel:          profile?.amputationLevel     || 'FULL',
     meshScaleMultiplier:      profile?.meshScaleMultiplier || 1.0,
     skinToneSliderHex:        profile?.skinToneSliderHex   || '#aa3bff',
@@ -228,6 +231,14 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
     }
   }, [sceneRef]);
 
+  // Called from the side-selection screen; commits the choice into configRef
+  // so that useMirrorEngine and spawnTargetPair both read the correct side.
+  // Passing null just goes back to the picker without touching configRef.
+  const selectSide = useCallback((side) => {
+    if (side !== null) configRef.current.amputationSide = side;
+    setAmputationSide(side);
+  }, []);
+
   const onLandmarksUpdate = useCallback((data) => {
     if (!data) return;
     const { real, phantom } = data;
@@ -316,16 +327,49 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
     <div className={'animate-fade-in ' + (gameState === 'running' ? 'mirror-session-shell' : '')}
       style={{ width: '100%', height: '100%' }}>
 
-      {gameState === 'ready' && (
-        <div className="glass-panel p-8" style={{ maxWidth: 580, margin: '60px auto', textAlign: 'center' }}>
-          <h2>Calibration Complete</h2>
-          <p style={{ marginTop: 12, opacity: 0.8 }}>
-            Show your <strong>{configRef.current.amputationSide === 'LEFT' ? 'right' : 'left'}</strong> hand
-            to the camera to begin.
+      {gameState === 'ready' && !amputationSide && (
+        <div className="glass-panel p-8" style={{ maxWidth: 560, margin: '60px auto', textAlign: 'center' }}>
+          <h2>Which side is amputated?</h2>
+          <p style={{ marginTop: 10, opacity: 0.75, fontSize: '0.95rem' }}>
+            We'll mirror your healthy hand to create the phantom on the amputated side.
           </p>
-          <button className="btn btn-primary mt-4" onClick={startSession}>
-            <PlayIcon className="w-5 h-5" /> Start Practice
-          </button>
+          <div style={{ display: 'flex', gap: 20, justifyContent: 'center', marginTop: 28 }}>
+            {['LEFT', 'RIGHT'].map((side) => (
+              <button
+                key={side}
+                className="btn btn-primary"
+                style={{ minWidth: 130, fontSize: '1.1rem', padding: '14px 28px' }}
+                onClick={() => selectSide(side)}
+              >
+                {side === 'LEFT' ? '✋ Left' : 'Right ✋'}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {gameState === 'ready' && amputationSide && (
+        <div className="glass-panel p-8" style={{ maxWidth: 560, margin: '60px auto', textAlign: 'center' }}>
+          <h2>Ready to Start</h2>
+          <p style={{ marginTop: 10, opacity: 0.75, fontSize: '0.95rem' }}>
+            Amputated side: <strong>{amputationSide}</strong>
+          </p>
+          <p style={{ marginTop: 8, opacity: 0.8 }}>
+            Show your <strong>{amputationSide === 'LEFT' ? 'right' : 'left'}</strong> hand
+            to the camera — the phantom will appear on your <strong>{amputationSide.toLowerCase()}</strong> side.
+          </p>
+          <div style={{ display: 'flex', gap: 14, justifyContent: 'center', marginTop: 28 }}>
+            <button
+              className="btn btn-secondary"
+              style={{ padding: '10px 22px' }}
+              onClick={() => selectSide(null)}
+            >
+              ← Change Side
+            </button>
+            <button className="btn btn-primary" style={{ padding: '12px 28px' }} onClick={startSession}>
+              <PlayIcon className="w-5 h-5" /> Start Practice
+            </button>
+          </div>
         </div>
       )}
 
@@ -397,7 +441,11 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
           <p>Accuracy: <strong>{accuracy}%</strong></p>
           {peakROM > 0 && <p>Peak ROM: <strong>{peakROM}&#xb0;</strong></p>}
           <button className="btn btn-primary mt-4"
-            onClick={() => { setGameState('ready'); setSecondsLeft(configRef.current.prescribedDuration || 120); }}>
+            onClick={() => {
+              setGameState('ready');
+              setSecondsLeft(configRef.current.prescribedDuration || 120);
+              setAmputationSide(profile?.amputationSide || null); // back to side picker
+            }}>
             Restart Session
           </button>
         </div>
