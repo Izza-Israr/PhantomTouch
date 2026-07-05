@@ -31,6 +31,9 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate })
       // Fetch active prescription
       const rxRes = await axios.get(`http://localhost:5000/api/prescriptions/patient/${profile._id}`, config);
       setPrescription(rxRes.data);
+      if (rxRes.data?.id) {
+        onUpdateProfile({ ...profile, currentPrescriptionId: rxRes.data.id });
+      }
 
       // Fetch completed sessions
       const sessionsRes = await axios.get(`http://localhost:5000/api/sessions/patient/${profile._id}`, config);

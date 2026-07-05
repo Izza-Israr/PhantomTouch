@@ -1,7 +1,8 @@
 require('dotenv').config();
 const express = require('express');
-const mongoose = require('mongoose');
 const cors = require('cors');
+const supabase = require('./utils/supabaseClient');
+const { hashPassword } = require('./utils/authHelper');
 
 const app = express();
 app.use(cors());
@@ -23,111 +24,156 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'PhantomTouch backend is running' });
 });
 
-// Database Auto-Seeder
-const Hospital = require('./models/Hospital');
-const User = require('./models/User');
-const Clinician = require('./models/Clinician');
-const Patient = require('./models/Patient');
-const ClinicalPrescription = require('./models/ClinicalPrescription');
-const TherapySession = require('./models/TherapySession');
-const { hashPassword } = require('./utils/authHelper');
-
 async function seedDatabase() {
   try {
-    const hospitalCount = await Hospital.countDocuments();
-    if (hospitalCount > 0) {
-      console.log('Database already seeded.');
+    const { count, error: countError } = await supabase
+      .from('hospitals')
+      .select('*', { count: 'exact', head: true });
+
+    if (countError) {
+      console.error('Seed skipped: could not count hospitals. Supabase error:', countError);
+      console.error('Check that SUPABASE_SERVICE_KEY is the service role key and that the backend is using it.');
       return;
     }
 
-    console.log('Seeding default database records...');
+    if (count === null || count === undefined) {
+      console.error('Seed skipped: count result was not returned from Supabase.');
+      return;
+    }
 
-    // 1. Seed Hospital
-    const hospital = new Hospital({
-      hospitalName: 'PhantomTouch Telerehab Center',
-      regulatoryLicense: 'PT-12345-USA',
-      city: 'Seattle',
-      country: 'USA'
-    });
-    await hospital.save();
-    console.log('Seeded Hospital:', hospital.hospitalName);
+    if (count > 0) {
+      console.log('Supabase already seeded.');
+      return;
+    }
 
-    // 2. Seed Clinician User
+    console.log('Seeding default Supabase database records...');
+
+    const { data: hospital, error: hospitalError } = await supabase
+      .from('hospitals')
+      .insert([{
+        hospital_name: 'PhantomTouch Telerehab Center',
+        regulatory_license: 'PT-12345-USA',
+        city: 'Seattle',
+        country: 'USA'
+      }])
+      .select('id')
+      .single();
+
+    if (hospitalError) throw hospitalError;
+
     const docPass = hashPassword('doctor123');
-    const docUser = new User({
-      email: 'doctor@phantomtouch.com',
-      passwordHash: docPass,
-      role: 'CLINICIAN'
-    });
-    await docUser.save();
+    const { data: docUser, error: docUserError } = await supabase
+      .from('users')
+      .insert([{
+        email: 'doctor@phantomtouch.com',
+        password_hash: docPass,
+        role: 'CLINICIAN',
+        session_token: null,
+        last_login: null
+      }])
+      .select('id')
+      .single();
 
-    const clinician = new Clinician({
-      userId: docUser._id,
-      hospitalId: hospital._id,
-      fullName: 'Dr. Sarah Jenkins',
-      medicalSpecialty: 'Neurological Rehabilitation & PLP',
-      licenseNumber: 'LIC-778899'
-    });
-    await clinician.save();
-    console.log('Seeded Clinician User:', docUser.email);
+    if (docUserError) throw docUserError;
 
-    // 3. Seed Patient Users
+    const { data: clinician, error: clinicianError } = await supabase
+      .from('clinicians')
+      .insert([{
+        user_id: docUser.id,
+        hospital_id: hospital.id,
+        full_name: 'Dr. Sarah Jenkins',
+        medical_specialty: 'Neurological Rehabilitation & PLP',
+        license_number: 'LIC-778899'
+      }])
+      .select('id')
+      .single();
+
+    if (clinicianError) throw clinicianError;
+    console.log('Seeded Clinician User: doctor@phantomtouch.com');
+
     const patPass = hashPassword('patient123');
-    const patUser1 = new User({
-      email: 'patient@phantomtouch.com',
-      passwordHash: patPass,
-      role: 'PATIENT'
-    });
-    await patUser1.save();
+    const { data: patUser1, error: patUser1Error } = await supabase
+      .from('users')
+      .insert([{
+        email: 'patient@phantomtouch.com',
+        password_hash: patPass,
+        role: 'PATIENT',
+        session_token: null,
+        last_login: null
+      }])
+      .select('id')
+      .single();
 
-    const patient1 = new Patient({
-      userId: patUser1._id,
-      hospitalId: hospital._id,
-      assignedClinicianId: clinician._id,
-      fullName: 'Alex Carter',
-      dateOfBirth: new Date('1985-05-15'),
-      amputationSide: 'LEFT',
-      amputationLevel: 'TRANSRADIAL',
-      skinToneSliderHex: '#aa3bff',
-      meshScaleMultiplier: 1.0
-    });
-    await patient1.save();
-    console.log('Seeded Patient 1:', patUser1.email);
+    if (patUser1Error) throw patUser1Error;
 
-    const patUser2 = new User({
-      email: 'john@phantomtouch.com',
-      passwordHash: patPass,
-      role: 'PATIENT'
-    });
-    await patUser2.save();
+    const { data: patient1, error: patient1Error } = await supabase
+      .from('patients')
+      .insert([{
+        user_id: patUser1.id,
+        hospital_id: hospital.id,
+        assigned_clinician_id: clinician.id,
+        full_name: 'Alex Carter',
+        date_of_birth: '1985-05-15',
+        amputation_side: 'LEFT',
+        amputation_level: 'TRANSRADIAL',
+        skin_tone_slider_hex: '#aa3bff',
+        mesh_scale_multiplier: 1.0
+      }])
+      .select('id')
+      .single();
 
-    const patient2 = new Patient({
-      userId: patUser2._id,
-      hospitalId: hospital._id,
-      assignedClinicianId: clinician._id,
-      fullName: 'John Doe',
-      dateOfBirth: new Date('1990-11-20'),
-      amputationSide: 'RIGHT',
-      amputationLevel: 'TRANSHUMERAL',
-      skinToneSliderHex: '#00f5ff',
-      meshScaleMultiplier: 1.2
-    });
-    await patient2.save();
-    console.log('Seeded Patient 2:', patUser2.email);
+    if (patient1Error) throw patient1Error;
+    console.log('Seeded Patient 1: patient@phantomtouch.com');
 
-    // 4. Seed Clinical Prescription for Alex
-    const prescription = new ClinicalPrescription({
-      patientId: patient1._id,
-      clinicianId: clinician._id,
-      prescribedSessionDurationSeconds: 120, // 2 minutes
-      targetSpawnRadius: 2.5,
-      requiredHoverDwellTimeMs: 800, // 0.8 seconds
-      isActive: true
-    });
-    await prescription.save();
+    const { data: patUser2, error: patUser2Error } = await supabase
+      .from('users')
+      .insert([{
+        email: 'john@phantomtouch.com',
+        password_hash: patPass,
+        role: 'PATIENT',
+        session_token: null,
+        last_login: null
+      }])
+      .select('id')
+      .single();
+
+    if (patUser2Error) throw patUser2Error;
+
+    const { data: patient2, error: patient2Error } = await supabase
+      .from('patients')
+      .insert([{
+        user_id: patUser2.id,
+        hospital_id: hospital.id,
+        assigned_clinician_id: clinician.id,
+        full_name: 'John Doe',
+        date_of_birth: '1990-11-20',
+        amputation_side: 'RIGHT',
+        amputation_level: 'TRANSHUMERAL',
+        skin_tone_slider_hex: '#00f5ff',
+        mesh_scale_multiplier: 1.2
+      }])
+      .select('id')
+      .single();
+
+    if (patient2Error) throw patient2Error;
+    console.log('Seeded Patient 2: john@phantomtouch.com');
+
+    const { data: prescription, error: prescriptionError } = await supabase
+      .from('clinical_prescriptions')
+      .insert([{
+        patient_id: patient1.id,
+        clinician_id: clinician.id,
+        prescribed_session_duration_seconds: 120,
+        target_spawn_radius: 2.5,
+        required_hover_dwell_time_ms: 800,
+        is_active: true
+      }])
+      .select('id')
+      .single();
+
+    if (prescriptionError) throw prescriptionError;
     console.log('Seeded Prescription for Alex Carter');
 
-    // 5. Seed Historical Sessions for Alex
     const now = new Date();
     const sessionData = [
       { offsetDays: 5, spawned: 10, hit: 6, rom: 45, duration: 120 },
@@ -139,33 +185,31 @@ async function seedDatabase() {
     for (const data of sessionData) {
       const sTime = new Date(now.getTime() - data.offsetDays * 24 * 60 * 60 * 1000);
       const eTime = new Date(sTime.getTime() + data.duration * 1000);
-      
-      const session = new TherapySession({
-        patientId: patient1._id,
-        prescriptionId: prescription._id,
-        startTime: sTime,
-        endTime: eTime,
-        totalDurationSeconds: data.duration,
-        targetsSpawned: data.spawned,
-        targetsHit: data.hit,
-        accuracyPercentage: Math.round((data.hit / data.spawned) * 100),
-        peakRangeOfMotionDegrees: data.rom
-      });
-      await session.save();
-    }
-    console.log('Seeded 4 therapy history runs for Alex Carter');
 
+      const { error: sessionError } = await supabase
+        .from('therapy_sessions')
+        .insert([{
+          patient_id: patient1.id,
+          prescription_id: prescription.id,
+          start_time: sTime,
+          end_time: eTime,
+          total_duration_seconds: data.duration,
+          targets_spawned: data.spawned,
+          targets_hit: data.hit,
+          accuracy_percentage: Math.round((data.hit / data.spawned) * 100),
+          peak_range_of_motion_degrees: data.rom
+        }]);
+
+      if (sessionError) throw sessionError;
+    }
+
+    console.log('Seeded 4 therapy history runs for Alex Carter');
   } catch (error) {
-    console.error('Error seeding database:', error);
+    console.error('Error seeding Supabase database:', error);
   }
 }
 
-mongoose.connect(process.env.MONGODB_URI)
-  .then(async () => {
-    console.log('MongoDB connected');
-    await seedDatabase();
-  })
-  .catch(err => console.error('MongoDB connection error:', err));
+seedDatabase().catch((error) => console.error('Seed init error:', error));
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

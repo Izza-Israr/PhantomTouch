@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import axios from 'axios';
 import * as THREE from 'three';
 import { useMirrorEngine } from '../hooks/useMirrorEngine';
 import { PlayIcon } from './Icons';
@@ -268,6 +269,45 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
     }
   }, [sceneRef]);
 
+  const saveSession = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const patientId = profile?._id || profile?.id || null;
+      const prescriptionId = profile?.currentPrescriptionId || profile?.prescriptionId || null;
+
+      const payload = {
+        patientId,
+        prescriptionId,
+        startTime: new Date(statsRef.current.startTime).toISOString(),
+        endTime: new Date().toISOString(),
+        targetsSpawned: statsRef.current.spawned,
+        targetsHit: statsRef.current.hits,
+        peakRangeOfMotionDegrees: statsRef.current.peakROM,
+        telemetryStream: statsRef.current.telemetry
+      };
+
+      if (!patientId) {
+        console.error('Cannot save therapy session: missing patientId in profile', profile);
+        return;
+      }
+      if (!token) {
+        console.error('Cannot save therapy session: missing auth token in localStorage');
+        return;
+      }
+
+      console.log('Saving therapy session payload:', payload);
+      const res = await axios.post('http://localhost:5000/api/sessions', payload, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+
+      console.log('Therapy session saved successfully', res.data);
+    } catch (error) {
+      console.error('Failed to save therapy session:', error.response ? error.response.data : error.message || error);
+    }
+  }, [profile]);
+
   const finishSession = useCallback(async () => {
     setGameState('saving');
     stopRenderLoop();
@@ -277,8 +317,9 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
         ? Math.round((statsRef.current.hits / statsRef.current.spawned) * 100)
         : 0,
     );
+    await saveSession();
     setGameState('finished');
-  }, [destroy, stopRenderLoop]);
+  }, [destroy, stopRenderLoop, saveSession]);
 
   const startSession = useCallback(() => {
     statsRef.current = { hits: 0, spawned: 1, startTime: Date.now(), endTime: null, peakROM: 0, telemetry: [], startPos: null };

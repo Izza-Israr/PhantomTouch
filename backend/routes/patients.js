@@ -1,28 +1,43 @@
 const express = require('express');
 const router = express.Router();
-const User = require('../models/User');
-const Patient = require('../models/Patient');
-const Clinician = require('../models/Clinician');
+const supabase = require('../utils/supabaseClient');
+const { normalizeRow, normalizeRows } = require('../utils/supabaseHelpers');
 const auth = require('../middleware/auth');
-const { hashPassword, generateToken } = require('../utils/authHelper');
+const { hashPassword } = require('../utils/authHelper');
 
-// Get all patients assigned to a clinician (or all patients if admin)
+// Get all patients assigned to a clinician (or the current patient if patient role)
 router.get('/', auth, async (req, res) => {
   try {
-    let query = {};
+    let query = supabase
+      .from('patients')
+      .select('*, assigned_clinician:clinicians(*), hospital:hospitals(*)');
+
     if (req.user.role === 'CLINICIAN') {
-      const clinician = await Clinician.findOne({ userId: req.user._id });
+      const { data: clinician, error: clinicianError } = await supabase
+        .from('clinicians')
+        .select('id, hospital_id')
+        .eq('user_id', req.user.id)
+        .maybeSingle();
+
+      if (clinicianError) {
+        console.error('Clinician lookup error:', clinicianError);
+        return res.status(500).json({ message: 'Failed to retrieve clinician profile' });
+      }
       if (!clinician) {
         return res.status(404).json({ message: 'Clinician profile not found' });
       }
-      query.assignedClinicianId = clinician._id;
+      query = query.eq('assigned_clinician_id', clinician.id);
     } else if (req.user.role === 'PATIENT') {
-      // Patients should only see themselves
-      query.userId = req.user._id;
+      query = query.eq('user_id', req.user.id);
     }
-    
-    const list = await Patient.find(query).populate('assignedClinicianId');
-    res.json(list);
+
+    const { data, error } = await query.order('full_name', { ascending: true });
+    if (error) {
+      console.error('Fetch patients error:', error);
+      return res.status(500).json({ message: 'Failed to retrieve patients' });
+    }
+
+    res.json(normalizeRows(data || []));
   } catch (error) {
     console.error('Fetch patients error:', error);
     res.status(500).json({ message: 'Failed to retrieve patients' });
@@ -42,46 +57,71 @@ router.post('/', auth, async (req, res) => {
       return res.status(400).json({ message: 'Missing required fields' });
     }
 
-    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    const { data: existingUser, error: existingError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', email.toLowerCase())
+      .maybeSingle();
+
+    if (existingError) {
+      console.error('User existence check error:', existingError);
+      return res.status(500).json({ message: 'Failed to verify user' });
+    }
     if (existingUser) {
       return res.status(400).json({ message: 'Email is already registered' });
     }
 
-    // Get clinician ID
-    let assignedClinicianId = null;
-    let hospitalId = null;
-    if (req.user.role === 'CLINICIAN') {
-      const clinician = await Clinician.findOne({ userId: req.user._id });
-      if (clinician) {
-        assignedClinicianId = clinician._id;
-        hospitalId = clinician.hospitalId;
-      }
+    const { data: clinician, error: clinicianError } = await supabase
+      .from('clinicians')
+      .select('id, hospital_id')
+      .eq('user_id', req.user.id)
+      .maybeSingle();
+
+    if (clinicianError) {
+      console.error('Clinician lookup error:', clinicianError);
+      return res.status(500).json({ message: 'Failed to retrieve clinician profile' });
     }
 
-    // Create User
     const passwordHash = hashPassword(password);
-    const newUser = new User({
-      email: email.toLowerCase(),
-      passwordHash,
-      role: 'PATIENT',
-    });
-    await newUser.save();
+    const { data: newUser, error: userError } = await supabase
+      .from('users')
+      .insert([{
+        email: email.toLowerCase(),
+        password_hash: passwordHash,
+        role: 'PATIENT',
+        session_token: null,
+        last_login: null
+      }])
+      .select('*')
+      .single();
 
-    // Create Patient profile
-    const newPatient = new Patient({
-      userId: newUser._id,
-      fullName,
-      dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
-      amputationSide,
-      amputationLevel,
-      assignedClinicianId,
-      hospitalId,
-      skinToneSliderHex: skinToneSliderHex || '#aa3bff',
-      meshScaleMultiplier: meshScaleMultiplier || 1.0
-    });
-    await newPatient.save();
+    if (userError) {
+      console.error('Create patient user error:', userError);
+      return res.status(500).json({ message: 'Failed to create patient account' });
+    }
 
-    res.status(214).json(newPatient);
+    const { data: newPatient, error: patientError } = await supabase
+      .from('patients')
+      .insert([{
+        user_id: newUser.id,
+        hospital_id: clinician?.hospital_id || null,
+        assigned_clinician_id: clinician?.id || null,
+        full_name: fullName,
+        date_of_birth: dateOfBirth ? new Date(dateOfBirth).toISOString() : null,
+        amputation_side: amputationSide,
+        amputation_level: amputationLevel,
+        skin_tone_slider_hex: skinToneSliderHex || '#aa3bff',
+        mesh_scale_multiplier: meshScaleMultiplier || 1.0
+      }])
+      .select('*')
+      .single();
+
+    if (patientError) {
+      console.error('Create patient profile error:', patientError);
+      return res.status(500).json({ message: 'Failed to create patient profile' });
+    }
+
+    res.status(201).json(normalizeRow(newPatient));
   } catch (error) {
     console.error('Create patient error:', error);
     res.status(500).json({ message: 'Failed to create patient account' });
@@ -91,19 +131,25 @@ router.post('/', auth, async (req, res) => {
 // Get detailed view of specific patient
 router.get('/:id', auth, async (req, res) => {
   try {
-    const patient = await Patient.findById(req.params.id)
-      .populate('assignedClinicianId')
-      .populate('hospitalId');
+    const { data: patient, error } = await supabase
+      .from('patients')
+      .select('*, assigned_clinician:clinicians(*), hospital:hospitals(*)')
+      .eq('id', req.params.id)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Fetch patient detail error:', error);
+      return res.status(500).json({ message: 'Failed to retrieve patient details' });
+    }
     if (!patient) {
       return res.status(404).json({ message: 'Patient not found' });
     }
 
-    // Authorization checks
-    if (req.user.role === 'PATIENT' && patient.userId.toString() !== req.user._id.toString()) {
+    if (req.user.role === 'PATIENT' && patient.user_id !== req.user.id) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    res.json(patient);
+    res.json(normalizeRow(patient));
   } catch (error) {
     console.error('Fetch patient detail error:', error);
     res.status(500).json({ message: 'Failed to retrieve patient details' });
@@ -113,27 +159,47 @@ router.get('/:id', auth, async (req, res) => {
 // Update patient settings/calibration variables
 router.put('/:id', auth, async (req, res) => {
   try {
-    const patient = await Patient.findById(req.params.id);
+    const { data: patient, error: patientError } = await supabase
+      .from('patients')
+      .select('*')
+      .eq('id', req.params.id)
+      .maybeSingle();
+
+    if (patientError) {
+      console.error('Fetch patient error:', patientError);
+      return res.status(500).json({ message: 'Failed to retrieve patient profile' });
+    }
     if (!patient) {
       return res.status(404).json({ message: 'Patient profile not found' });
     }
 
-    // Authorization: only the patient themselves, their assigned clinician, or an admin
-    if (req.user.role === 'PATIENT' && patient.userId.toString() !== req.user._id.toString()) {
+    if (req.user.role === 'PATIENT' && patient.user_id !== req.user.id) {
       return res.status(403).json({ message: 'Access denied to this profile' });
     }
 
     const { fullName, amputationSide, amputationLevel, skinToneSliderHex, meshScaleMultiplier, assignedClinicianId } = req.body;
+    const updates = {};
 
-    if (fullName) patient.fullName = fullName;
-    if (amputationSide) patient.amputationSide = amputationSide;
-    if (amputationLevel) patient.amputationLevel = amputationLevel;
-    if (skinToneSliderHex) patient.skinToneSliderHex = skinToneSliderHex;
-    if (meshScaleMultiplier !== undefined) patient.meshScaleMultiplier = Number(meshScaleMultiplier);
-    if (assignedClinicianId && req.user.role === 'ADMIN') patient.assignedClinicianId = assignedClinicianId;
+    if (fullName) updates.full_name = fullName;
+    if (amputationSide) updates.amputation_side = amputationSide;
+    if (amputationLevel) updates.amputation_level = amputationLevel;
+    if (skinToneSliderHex) updates.skin_tone_slider_hex = skinToneSliderHex;
+    if (meshScaleMultiplier !== undefined) updates.mesh_scale_multiplier = Number(meshScaleMultiplier);
+    if (assignedClinicianId && req.user.role === 'ADMIN') updates.assigned_clinician_id = assignedClinicianId;
 
-    await patient.save();
-    res.json(patient);
+    const { data: updatedPatient, error: updateError } = await supabase
+      .from('patients')
+      .update(updates)
+      .eq('id', req.params.id)
+      .select('*')
+      .single();
+
+    if (updateError) {
+      console.error('Update patient profile error:', updateError);
+      return res.status(500).json({ message: 'Failed to update patient profile' });
+    }
+
+    res.json(normalizeRow(updatedPatient));
   } catch (error) {
     console.error('Update patient profile error:', error);
     res.status(500).json({ message: 'Failed to update patient profile' });

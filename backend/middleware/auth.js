@@ -1,4 +1,5 @@
-const User = require('../models/User');
+const supabase = require('../utils/supabaseClient');
+const { normalizeRow } = require('../utils/supabaseHelpers');
 
 module.exports = async (req, res, next) => {
   try {
@@ -12,12 +13,22 @@ module.exports = async (req, res, next) => {
       return res.status(401).json({ message: 'Invalid token format' });
     }
 
-    const user = await User.findOne({ sessionToken: token });
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('session_token', token)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Auth middleware error:', error);
+      return res.status(500).json({ message: 'Internal server error during auth validation' });
+    }
+
     if (!user) {
       return res.status(401).json({ message: 'Invalid or expired session' });
     }
 
-    req.user = user;
+    req.user = normalizeRow(user);
     next();
   } catch (error) {
     console.error('Auth middleware error:', error);
