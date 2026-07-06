@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import axios from 'axios';
 import * as THREE from 'three';
 import { useMirrorEngine } from '../hooks/useMirrorEngine';
@@ -8,8 +8,8 @@ function playSuccessChime() {
   try {
     const Ctx = window.AudioContext || window.webkitAudioContext;
     if (!Ctx) return;
-    const ctx  = new Ctx();
-    const osc  = ctx.createOscillator();
+    const ctx = new Ctx();
+    const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.connect(gain);
     gain.connect(ctx.destination);
@@ -21,16 +21,18 @@ function playSuccessChime() {
     gain.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
     osc.start(t);
     osc.stop(t + 0.3);
-  } catch (_) {}
+  } catch (error) {
+    console.debug('Success chime unavailable:', error);
+  }
 }
 
 function makeTargetMesh(scene) {
-  const geo  = new THREE.IcosahedronGeometry(0.4, 1);
-  const mat  = new THREE.MeshPhongMaterial({
+  const geo = new THREE.IcosahedronGeometry(0.4, 1);
+  const mat = new THREE.MeshPhongMaterial({
     color: 0x00f5ff, emissive: 0x00f5ff, emissiveIntensity: 0.4,
     wireframe: true, transparent: true, opacity: 0.8,
   });
-  const mesh  = new THREE.Mesh(geo, mat);
+  const mesh = new THREE.Mesh(geo, mat);
   const light = new THREE.PointLight(0x00f5ff, 1.8, 6);
   scene.add(mesh);
   scene.add(light);
@@ -38,8 +40,8 @@ function makeTargetMesh(scene) {
 }
 
 function makeDebugPointer(scene) {
-  const geo  = new THREE.SphereGeometry(0.12, 16, 16);
-  const mat  = new THREE.MeshBasicMaterial({ color: 0xff0000, depthTest: false });
+  const geo = new THREE.SphereGeometry(0.12, 16, 16);
+  const mat = new THREE.MeshBasicMaterial({ color: 0xff0000, depthTest: false });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.renderOrder = 999;
   scene.add(mesh);
@@ -47,13 +49,13 @@ function makeDebugPointer(scene) {
 }
 
 function spawnTargetPair(targetA, targetB, configRef) {
-  const side     = configRef.current.amputationSide || 'LEFT';
+  const side = configRef.current.amputationSide || 'LEFT';
   const xPhantom = side === 'LEFT' ? -1 : 1;
-  const xReal    = -xPhantom;
-  const xOffset  = 1.2 + Math.random() * 2.0;
-  const y        = -1.2 + Math.random() * 2.4;
+  const xReal = -xPhantom;
+  const xOffset = 1.2 + Math.random() * 2.0;
+  const y = -1.2 + Math.random() * 2.4;
 
-  targetA.mesh.position.set(xReal    * xOffset, y, 0);
+  targetA.mesh.position.set(xReal * xOffset, y, 0);
   targetA.light.position.copy(targetA.mesh.position);
   targetA.mesh.scale.set(1, 1, 1);
   targetA.userData = { originalPosition: targetA.mesh.position.clone() };
@@ -69,12 +71,12 @@ function burstParticles(scene, pos, toneHex, particlesRef) {
   for (let i = 0; i < 20; i++) {
     const geo = new THREE.BoxGeometry(0.06, 0.06, 0.06);
     const mat = new THREE.MeshPhongMaterial({
-      color:             i % 2 === 0 ? 0x00f5ff : tone,
-      emissive:          i % 2 === 0 ? 0x00f5ff : tone,
+      color: i % 2 === 0 ? 0x00f5ff : tone,
+      emissive: i % 2 === 0 ? 0x00f5ff : tone,
       emissiveIntensity: 0.9,
       transparent: true, opacity: 1,
     });
-    const p   = new THREE.Mesh(geo, mat);
+    const p = new THREE.Mesh(geo, mat);
     p.position.copy(pos);
     const vel = new THREE.Vector3(
       (Math.random() - 0.5) * 0.15,
@@ -86,21 +88,22 @@ function burstParticles(scene, pos, toneHex, particlesRef) {
   }
 }
 
-export const TherapyGame = ({ user, profile, onNavigate }) => {
-  const [gameState,      setGameState]      = useState('ready');
-  const [secondsLeft,    setSecondsLeft]    = useState(120);
-  const [targetsHit,     setTargetsHit]     = useState(0);
+export const TherapyGame = ({ profile, onNavigate }) => {
+  const [gameState, setGameState] = useState('ready');
+  const [secondsLeft, setSecondsLeft] = useState(120);
+  const [targetsHit, setTargetsHit] = useState(0);
   const [targetsSpawned, setTargetsSpawned] = useState(0);
-  const [peakROM,        setPeakROM]        = useState(0);
-  const [accuracy,       setAccuracy]       = useState(0);
-  const [hoverPct,       setHoverPct]       = useState(0);
+  const [peakROM, setPeakROM] = useState(0);
+  const [accuracy, setAccuracy] = useState(0);
+  const [hoverPct, setHoverPct] = useState(0);
+  const [sessionSaved, setSessionSaved] = useState(null);
 
   // null = not yet chosen; 'LEFT' or 'RIGHT' = amputated side selected by user
   const [amputationSide, setAmputationSide] = useState(profile?.amputationSide || null);
 
   const containerRef = useRef(null);
-  const canvasRef    = useRef(null);
-  const videoRef     = useRef(null);
+  const canvasRef = useRef(null);
+  const videoRef = useRef(null);
 
   const statsRef = useRef({
     hits: 0, spawned: 0, startTime: null, endTime: null,
@@ -108,20 +111,20 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
   });
 
   const configRef = useRef({
-    amputationSide:           profile?.amputationSide      || 'LEFT', // overwritten by selectSide before session
-    amputationLevel:          profile?.amputationLevel     || 'FULL',
-    meshScaleMultiplier:      profile?.meshScaleMultiplier || 1.0,
-    skinToneSliderHex:        profile?.skinToneSliderHex   || '#aa3bff',
-    prescribedDuration:       120,
-    targetSpawnRadius:        2.0,
+    amputationSide: profile?.amputationSide || 'LEFT', // overwritten by selectSide before session
+    amputationLevel: profile?.amputationLevel || 'FULL',
+    meshScaleMultiplier: profile?.meshScaleMultiplier || 1.0,
+    skinToneSliderHex: profile?.skinToneSliderHex || '#aa3bff',
+    prescribedDuration: 120,
+    targetSpawnRadius: 2.0,
     requiredHoverDwellTimeMs: 800,
-    hoverAccumMs:             0,
+    hoverAccumMs: 0,
   });
 
-  const targetPairRef   = useRef(null);
+  const targetPairRef = useRef(null);
   const debugPointerRef = useRef(null);
-  const particlesRef    = useRef([]);
-  const gameStateRef    = useRef('ready');
+  const particlesRef = useRef([]);
+  const gameStateRef = useRef('ready');
   useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
 
   const landmarksHandlerRef = useRef(null);
@@ -138,6 +141,31 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
     destroy,
   } = useMirrorEngine({ configRef, onLandmarksUpdate: stableRelay });
 
+  useEffect(() => {
+    const loadPrescription = async () => {
+      const patientId = profile?._id || profile?.id;
+      const token = localStorage.getItem('token');
+      if (!patientId || !token) return;
+
+      try {
+        const res = await axios.get(`http://localhost:5000/api/prescriptions/patient/${patientId}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.data) {
+          configRef.current.prescribedDuration = res.data.prescribedSessionDurationSeconds || configRef.current.prescribedDuration;
+          configRef.current.targetSpawnRadius = res.data.targetSpawnRadius || configRef.current.targetSpawnRadius;
+          configRef.current.requiredHoverDwellTimeMs = res.data.requiredHoverDwellTimeMs || configRef.current.requiredHoverDwellTimeMs;
+          configRef.current.prescriptionId = res.data.id || res.data._id || null;
+          setSecondsLeft(configRef.current.prescribedDuration || 120);
+        }
+      } catch (error) {
+        console.warn('Using default session prescription settings:', error.response?.data || error.message);
+      }
+    };
+
+    loadPrescription();
+  }, [profile?._id, profile?.id]);
+
   const handleLandmarks = useCallback((real, phantom) => {
     if (!targetPairRef.current || gameStateRef.current !== 'running' || !real || !phantom) return;
     const { a: targetA, b: targetB } = targetPairRef.current;
@@ -150,7 +178,7 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
 
     const pinchX = (indexTip.x + thumbTip.x) / 2;
     const pinchY = (indexTip.y + thumbTip.y) / 2;
-    
+
     // Check distance against target A's ORIGINAL fixed position so the 
     // magnetic snap doesn't cause it to follow the hand and lock infinitely.
     const basePosA = targetA.userData?.originalPosition || targetA.mesh.position;
@@ -166,7 +194,7 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
     if (realSh && phanSh && targetB.userData?.originalPosition && targetA.userData?.originalPosition) {
       const dx = targetA.userData.originalPosition.x - realSh.x;
       const dy = targetA.userData.originalPosition.y - realSh.y;
-      
+
       // Mirror the X offset, preserve the Y offset
       targetB.mesh.position.x = phanSh.x - dx;
       targetB.mesh.position.y = phanSh.y + dy;
@@ -174,17 +202,6 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
     }
 
     // Phantom pinch coordinates
-    const phanIndex = phantom[8];
-    const phanThumb = phantom[4];
-    let phanPinch = null;
-    if (phanIndex && phanThumb) {
-      phanPinch = new THREE.Vector3(
-        (phanIndex.x + phanThumb.x) / 2,
-        (phanIndex.y + phanThumb.y) / 2,
-        0
-      );
-    }
-
     if (debugPointerRef.current) {
       debugPointerRef.current.position.set(pinchX, pinchY, 0.05);
     }
@@ -273,7 +290,7 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
     try {
       const token = localStorage.getItem('token');
       const patientId = profile?._id || profile?.id || null;
-      const prescriptionId = profile?.currentPrescriptionId || profile?.prescriptionId || null;
+      const prescriptionId = configRef.current.prescriptionId || profile?.currentPrescriptionId || profile?.prescriptionId || null;
 
       const payload = {
         patientId,
@@ -288,11 +305,11 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
 
       if (!patientId) {
         console.error('Cannot save therapy session: missing patientId in profile', profile);
-        return;
+        return false;
       }
       if (!token) {
         console.error('Cannot save therapy session: missing auth token in localStorage');
-        return;
+        return false;
       }
 
       console.log('Saving therapy session payload:', payload);
@@ -303,8 +320,10 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
       });
 
       console.log('Therapy session saved successfully', res.data);
+      return true;
     } catch (error) {
       console.error('Failed to save therapy session:', error.response ? error.response.data : error.message || error);
+      return false;
     }
   }, [profile]);
 
@@ -317,7 +336,8 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
         ? Math.round((statsRef.current.hits / statsRef.current.spawned) * 100)
         : 0,
     );
-    await saveSession();
+    const saved = await saveSession();
+    setSessionSaved(saved);
     setGameState('finished');
   }, [destroy, stopRenderLoop, saveSession]);
 
@@ -328,6 +348,7 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
     setTargetsSpawned(1);
     setSecondsLeft(configRef.current.prescribedDuration || 120);
     setHoverPct(0);
+    setSessionSaved(null);
     setGameState('running');
   }, []);
 
@@ -337,15 +358,15 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
     const tA = makeTargetMesh(scene);
     const tB = makeTargetMesh(scene);
     spawnTargetPair(tA, tB, configRef);
-    targetPairRef.current   = { a: tA, b: tB };
+    targetPairRef.current = { a: tA, b: tB };
     debugPointerRef.current = makeDebugPointer(scene);
-    particlesRef.current    = [];
+    particlesRef.current = [];
     startRenderLoop(onFrame);
     initMediaPipe(videoRef.current);
     return () => {
       stopRenderLoop();
       destroy();
-      targetPairRef.current   = null;
+      targetPairRef.current = null;
       debugPointerRef.current = null;
     };
   }, [gameState, initThreeJS, startRenderLoop, onFrame, initMediaPipe, destroy, stopRenderLoop]);
@@ -420,12 +441,16 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
           overflow: 'hidden', backgroundColor: '#000', zIndex: 99,
         }}>
           <video ref={videoRef} className="mirror-camera-feed" autoPlay playsInline muted
-            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
-              objectFit: 'contain', transform: 'scaleX(-1)', zIndex: 1 }} />
+            style={{
+              position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+              objectFit: 'contain', transform: 'scaleX(-1)', zIndex: 1
+            }} />
 
           <div ref={containerRef} className="mirror-canvas-layer"
-            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
-              zIndex: 2, pointerEvents: 'none' }}>
+            style={{
+              position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+              zIndex: 2, pointerEvents: 'none'
+            }}>
             <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block' }} />
           </div>
 
@@ -456,16 +481,6 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
                 style={{ padding: '10px 24px', fontSize: '1rem', cursor: 'pointer' }}>End</button>
             </div>
           </div>
-
-          <div style={{ position: 'absolute', right: 18, bottom: 18, zIndex: 4,
-            background: 'rgba(0,0,0,0.5)', color: '#fff', padding: '8px 12px',
-            borderRadius: 8, fontSize: 12, fontFamily: 'monospace', textAlign: 'left' }}>
-            <div style={{ fontWeight: 'bold', marginBottom: 6 }}>Camera Status</div>
-            <div>Stream: {videoRef.current?.srcObject ? 'connected' : 'none'}</div>
-            <div>ReadyState: {videoRef.current?.readyState ?? 'n/a'}</div>
-            <div>Paused: {videoRef.current ? String(videoRef.current.paused) : 'n/a'}</div>
-            <div style={{ marginTop: 6, opacity: 0.9 }}>Check browser permissions if no stream.</div>
-          </div>
         </div>
       )}
 
@@ -476,19 +491,42 @@ export const TherapyGame = ({ user, profile, onNavigate }) => {
       )}
 
       {gameState === 'finished' && (
-        <div className="glass-panel p-8" style={{ maxWidth: 580, margin: '40px auto', textAlign: 'center' }}>
-          <h2 className="text-green-400">Session Complete</h2>
-          <p style={{ marginTop: 12 }}>Targets Hit: <strong>{targetsHit}</strong></p>
-          <p>Accuracy: <strong>{accuracy}%</strong></p>
-          {peakROM > 0 && <p>Peak ROM: <strong>{peakROM}&#xb0;</strong></p>}
-          <button className="btn btn-primary mt-4"
-            onClick={() => {
-              setGameState('ready');
-              setSecondsLeft(configRef.current.prescribedDuration || 120);
-              setAmputationSide(profile?.amputationSide || null); // back to side picker
-            }}>
-            Restart Session
-          </button>
+        <div className="glass-panel clinical-card session-summary">
+          <span className="clinical-eyebrow">Practice summary</span>
+          <h2 style={{ marginTop: 8 }}>Session Complete</h2>
+          <p style={{ marginTop: 10, color: 'var(--text-secondary)' }}>
+            {sessionSaved === false
+              ? 'The session ended, but the dashboard could not save this attempt. Please check your connection and backend.'
+              : 'This session has been recorded and will appear on the patient and clinician dashboards.'}
+          </p>
+          <div className="metric-grid" style={{ marginTop: 22, marginBottom: 0 }}>
+            <div className="glass-panel metric-card" style={{ minHeight: 110 }}>
+              <span>Targets Hit</span>
+              <strong>{targetsHit}/{targetsSpawned}</strong>
+            </div>
+            <div className="glass-panel metric-card" style={{ minHeight: 110 }}>
+              <span>Accuracy</span>
+              <strong>{accuracy}%</strong>
+            </div>
+            <div className="glass-panel metric-card" style={{ minHeight: 110 }}>
+              <span>Peak ROM</span>
+              <strong>{peakROM}&deg;</strong>
+            </div>
+          </div>
+          <div className="session-actions">
+            <button className="btn btn-secondary" onClick={() => onNavigate('dashboard')}>
+              Go to Dashboard
+            </button>
+            <button className="btn btn-primary"
+              onClick={() => {
+                setGameState('ready');
+                setSecondsLeft(configRef.current.prescribedDuration || 120);
+                setAmputationSide(profile?.amputationSide || null);
+                setSessionSaved(null);
+              }}>
+              <PlayIcon className="w-5 h-5" /> Practice Again
+            </button>
+          </div>
         </div>
       )}
     </div>

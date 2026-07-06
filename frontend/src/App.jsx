@@ -1,11 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import axios from 'axios';
 import { LandingScreen } from './components/LandingScreen';
 import { AuthScreen } from './components/AuthScreen';
 import { PatientDashboard } from './components/PatientDashboard';
 import { ClinicianDashboard } from './components/ClinicianDashboard';
 import { TherapyGame } from './components/TherapyGame';
-import { HospitalIcon, LogOutIcon } from './components/Icons';
+import { ActivityIcon, BarChartIcon, ClockIcon, HospitalIcon, LogOutIcon, SettingsIcon, UserIcon } from './components/Icons';
 
 // Add this right below your import statements to clean up your network calls
 axios.interceptors.request.use((config) => {
@@ -24,6 +24,32 @@ function App() {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
+  const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light');
+  const [dashboardView, setDashboardView] = useState('overview');
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
+  const handleLogout = useCallback(async () => {
+    try {
+      const storedToken = localStorage.getItem('token');
+      if (storedToken) {
+        await axios.post('http://localhost:5000/api/auth/logout', {}, {
+          headers: { Authorization: `Bearer ${storedToken}` }
+        });
+      }
+    } catch (e) {
+      console.warn('Server logout call failed:', e);
+    } finally {
+      localStorage.removeItem('token');
+      setToken('');
+      setUser(null);
+      setProfile(null);
+      setScreen('landing');
+    }
+  }, []);
 
   // Authenticate user on startup if a token exists
   useEffect(() => {
@@ -54,7 +80,7 @@ function App() {
     };
 
     initializeAuth();
-  }, []);
+  }, [handleLogout]);
 
   const handleAuthSuccess = (newToken, newUser, newProfile) => {
     localStorage.setItem('token', newToken);
@@ -62,25 +88,6 @@ function App() {
     setUser(newUser);
     setProfile(newProfile);
     setScreen('dashboard');
-  };
-
-  const handleLogout = async () => {
-    try {
-      const storedToken = localStorage.getItem('token');
-      if (storedToken) {
-        await axios.post('http://localhost:5000/api/auth/logout', {}, {
-          headers: { Authorization: `Bearer ${storedToken}` }
-        });
-      }
-    } catch (e) {
-      console.warn('Server logout call failed:', e);
-    } finally {
-      localStorage.removeItem('token');
-      setToken('');
-      setUser(null);
-      setProfile(null);
-      setScreen('landing');
-    }
   };
 
   const handleUpdateProfile = (updatedProfile) => {
@@ -94,6 +101,7 @@ function App() {
       return;
     }
     setScreen(targetScreen);
+    if (targetScreen === 'dashboard') setDashboardView('overview');
   };
 
   if (checkingAuth) {
@@ -107,7 +115,7 @@ function App() {
   return (
     <>
       {/* Navigation Header */}
-      <header className="nav-header">
+      <header className={`nav-header ${token && screen === 'dashboard' ? 'nav-header-dashboard' : ''}`}>
         <div
           onClick={() => handleNavigate(token ? 'dashboard' : 'landing')}
           style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}
@@ -117,7 +125,7 @@ function App() {
             fontFamily: 'var(--font-display)',
             fontWeight: 800,
             fontSize: '1.4rem',
-            background: 'linear-gradient(135deg, #fff 0%, var(--accent-purple) 100%)',
+            background: 'linear-gradient(135deg, var(--text-primary) 0%, var(--accent-purple) 100%)',
             WebkitBackgroundClip: 'text',
             WebkitTextFillColor: 'transparent'
           }}>
@@ -129,7 +137,7 @@ function App() {
           {token ? (
             <>
               <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }} className="hidden-mobile">
-                Signed in as: <strong style={{ color: '#fff' }}>{profile?.fullName || user?.email}</strong>
+                Signed in as: <strong style={{ color: 'var(--text-primary)' }}>{profile?.fullName || user?.email}</strong>
                 <span style={{
                   marginLeft: '8px',
                   fontSize: '0.75rem',
@@ -143,6 +151,14 @@ function App() {
                   {user?.role.toLowerCase()}
                 </span>
               </span>
+              <button
+                className="btn btn-secondary theme-toggle"
+                onClick={() => setTheme(prev => prev === 'dark' ? 'light' : 'dark')}
+                aria-label="Toggle dashboard theme"
+                title="Toggle dashboard theme"
+              >
+                {theme === 'dark' ? 'Light' : 'Dark'}
+              </button>
               <button className="btn btn-secondary" onClick={handleLogout} style={{ padding: '8px 16px', fontSize: '0.85rem' }}>
                 <LogOutIcon className="w-4 h-4" /> Log Out
               </button>
@@ -172,7 +188,66 @@ function App() {
       `}</style>
 
       {/* Main Content Router */}
-      <main style={{ flexGrow: 1 }}>
+      <main className={token && screen === 'dashboard' ? 'app-shell' : ''} style={{ flexGrow: 1 }}>
+        {token && screen === 'dashboard' && (
+          <aside className="dashboard-sidebar" aria-label="Dashboard navigation">
+            <button className="sidebar-brand" onClick={() => handleNavigate('dashboard')} title="Dashboard">
+              <HospitalIcon className="w-6 h-6" />
+            </button>
+            <nav className="sidebar-nav">
+              <button
+                className={`sidebar-item ${dashboardView === 'overview' ? 'active' : ''}`}
+                onClick={() => setDashboardView('overview')}
+                title="Overview"
+                aria-label="Overview"
+                data-label="Overview"
+              >
+                <ActivityIcon className="w-5 h-5" />
+              </button>
+              <button
+                className={`sidebar-item ${dashboardView === 'profile' ? 'active' : ''}`}
+                onClick={() => setDashboardView('profile')}
+                title="Profile"
+                aria-label="Profile"
+                data-label="Profile"
+              >
+                <UserIcon className="w-5 h-5" />
+              </button>
+              <button
+                className={`sidebar-item ${dashboardView === 'statistics' ? 'active' : ''}`}
+                onClick={() => setDashboardView('statistics')}
+                title="Statistics"
+                aria-label="Statistics"
+                data-label="Stats"
+              >
+                <BarChartIcon className="w-5 h-5" />
+              </button>
+              <button
+                className={`sidebar-item ${dashboardView === 'sessions' ? 'active' : ''}`}
+                onClick={() => setDashboardView('sessions')}
+                title="Session history"
+                aria-label="Session history"
+                data-label="Sessions"
+              >
+                <ClockIcon className="w-5 h-5" />
+              </button>
+              <button
+                className="sidebar-item"
+                onClick={() => setTheme(prev => prev === 'dark' ? 'light' : 'dark')}
+                title="Theme"
+                aria-label="Toggle theme"
+                data-label="Theme"
+              >
+                <SettingsIcon className="w-5 h-5" />
+              </button>
+            </nav>
+            <button className="sidebar-item sidebar-exit" onClick={handleLogout} title="Log out" aria-label="Log out" data-label="Logout">
+              <LogOutIcon className="w-5 h-5" />
+            </button>
+          </aside>
+        )}
+
+        <div className={token && screen === 'dashboard' ? 'app-content' : ''}>
         {screen === 'landing' && <LandingScreen onNavigate={handleNavigate} />}
 
         {(screen === 'login' || screen === 'register') && (
@@ -190,11 +265,17 @@ function App() {
               profile={profile}
               onUpdateProfile={handleUpdateProfile}
               onNavigate={handleNavigate}
+              theme={theme}
+              onToggleTheme={() => setTheme(prev => prev === 'dark' ? 'light' : 'dark')}
+              view={dashboardView}
             />
           ) : (
             <ClinicianDashboard
               user={user}
               profile={profile}
+              theme={theme}
+              onToggleTheme={() => setTheme(prev => prev === 'dark' ? 'light' : 'dark')}
+              view={dashboardView}
             />
           )
         )}
@@ -206,6 +287,7 @@ function App() {
             onNavigate={handleNavigate}
           />
         )}
+        </div>
       </main>
     </>
   );
