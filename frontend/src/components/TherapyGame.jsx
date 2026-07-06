@@ -115,6 +115,7 @@ export const TherapyGame = ({ profile, onNavigate }) => {
   const configRef = useRef({
     amputationSide: profile?.amputationSide || 'LEFT', // overwritten by selectSide before session
     amputationLevel: profile?.amputationLevel || 'FULL',
+    missingFingers: profile?.missingFingers || [],
     meshScaleMultiplier: profile?.meshScaleMultiplier || 1.0,
     skinToneSliderHex: profile?.skinToneSliderHex || '#aa3bff',
     prescribedDuration: 120,
@@ -122,6 +123,14 @@ export const TherapyGame = ({ profile, onNavigate }) => {
     requiredHoverDwellTimeMs: 800,
     hoverAccumMs: 0,
   });
+
+  useEffect(() => {
+    configRef.current.amputationSide = amputationSide || profile?.amputationSide || 'LEFT';
+    configRef.current.amputationLevel = profile?.amputationLevel || 'TRANSRADIAL';
+    configRef.current.missingFingers = profile?.missingFingers || [];
+    configRef.current.meshScaleMultiplier = profile?.meshScaleMultiplier || 1.0;
+    configRef.current.skinToneSliderHex = profile?.skinToneSliderHex || '#aa3bff';
+  }, [amputationSide, profile]);
 
   const targetPairRef = useRef(null);
   const debugPointerRef = useRef(null);

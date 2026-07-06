@@ -44,9 +44,13 @@ create table patients (
   date_of_birth date,
   amputation_side text not null check (amputation_side in ('LEFT', 'RIGHT', 'BILATERAL')),
   amputation_level text not null,
+  missing_fingers text[] not null default '{}',
   skin_tone_slider_hex text not null default '#aa3bff',
   mesh_scale_multiplier numeric not null default 1.0
 );
+
+ALTER TABLE patients
+  ADD COLUMN IF NOT EXISTS missing_fingers text[] not null default '{}';
 
 create table clinical_prescriptions (
   id uuid primary key default gen_random_uuid(),

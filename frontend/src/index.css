@@ -1297,6 +1297,35 @@ label {
   font-weight: 700;
 }
 
+.finger-checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 10px;
+}
+
+.finger-checkbox {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.finger-checkbox input {
+  width: auto;
+  margin: 0;
+  accent-color: var(--accent-cyan);
+}
+
 .session-table-wrap {
   overflow-x: auto;
 }

@@ -5,6 +5,8 @@ import { PlayIcon, CheckIcon } from './Icons';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 
+const FINGER_OPTIONS = ['THUMB', 'INDEX', 'MIDDLE', 'RING', 'PINKY'];
+
 const CircularProgressCard = ({ value, label, sublabel, percentage, strokeColor }) => {
   const radius = 34;
   const strokeWidth = 8;
@@ -53,7 +55,8 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
   const [profileForm, setProfileForm] = useState({
     fullName: profile?.fullName || '',
     amputationSide: profile?.amputationSide || 'LEFT',
-    amputationLevel: profile?.amputationLevel || 'TRANSRADIAL'
+    amputationLevel: profile?.amputationLevel || 'TRANSRADIAL',
+    missingFingers: profile?.missingFingers || []
   });
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
@@ -114,7 +117,8 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
     setProfileForm({
       fullName: profile?.fullName || '',
       amputationSide: profile?.amputationSide || 'LEFT',
-      amputationLevel: profile?.amputationLevel || 'TRANSRADIAL'
+      amputationLevel: profile?.amputationLevel || 'TRANSRADIAL',
+      missingFingers: profile?.missingFingers || []
     });
   }, [profile]);
 
@@ -123,7 +127,11 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
     setSavingProfile(true);
     setProfileSaved(false);
     try {
-      const res = await axios.put(`http://localhost:5000/api/patients/${profile._id}`, profileForm, {
+      const payload = {
+        ...profileForm,
+        missingFingers: profileForm.amputationLevel === 'FINGER_AMPUTATION' ? profileForm.missingFingers : []
+      };
+      const res = await axios.put(`http://localhost:5000/api/patients/${profile._id}`, payload, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
       onUpdateProfile(res.data);
@@ -205,7 +213,7 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
 
   const displaySessions = sessions;
 
-  const recentSessionRows = displaySessions.slice(0, 5).map((session, index) => {
+  const renderSessionRows = (rows) => rows.map((session, index) => {
     const sDate = session.startTime ? formatToPakistanTime(session.startTime, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Jul 6, 2026';
     const sTime = session.startTime ? formatToPakistanTime(session.startTime, { hour: '2-digit', minute: '2-digit', hour12: true }) : '09:14 AM';
     const sDuration = formatDurationMinSec(session.totalDurationSeconds || 0);
@@ -235,6 +243,8 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
       </tr>
     );
   });
+  const recentSessionRows = renderSessionRows(displaySessions.slice(0, 5));
+  const allSessionRows = renderSessionRows(displaySessions);
 
   const lastSessionObj = sessions[0] || {};
 
@@ -276,11 +286,11 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
 
     if (painEntries.length < 2) return null;
 
-    const baseline = painEntries[0].pain;
+    const previous = painEntries[painEntries.length - 2].pain;
     const current = painEntries[painEntries.length - 1].pain;
-    if (baseline <= 0) return null;
+    if (previous === 0) return current === 0 ? 0 : -100;
 
-    return Math.round(((baseline - current) / baseline) * 100);
+    return Math.round(((previous - current) / previous) * 100);
   };
 
   const painReductionPercent = computePainReduction(sessions);
@@ -326,7 +336,7 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
       <div className="dashboard-status-row" style={{ display: 'flex', gap: '10px', marginBottom: '24px' }}>
         <div className="status-pill status-active">
           <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: 'var(--accent-cyan)' }} />
-          AI Tracking Active
+          Tracking Active
         </div>
         <div className="status-pill status-date">{formatToPakistanTime(new Date(), { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} PST</div>
       </div>
@@ -361,7 +371,7 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
                 alignSelf: 'flex-start'
               }}>
                 <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'currentColor' }} />
-                AI-Powered Mirror Therapy
+                Digital Mirror Therapy
               </div>
               <h2 style={{ fontSize: '2.5rem', fontWeight: 800, lineHeight: 1.1, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
                 Virtual Mirror Therapy for <span style={{ color: 'var(--accent-cyan)' }}>Phantom Limb</span> Rehabilitation
@@ -406,7 +416,7 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
                   </div>
                 </div>
                 <strong style={{ fontSize: '1.6rem', fontWeight: 800, color: painReductionPercent !== null && painReductionPercent < 0 ? 'var(--error)' : 'var(--success)' }}>{painReductionPercent !== null ? `${painReductionPercent}%` : '—'}</strong>
-                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600 }}>{painReductionPercent !== null ? 'vs. baseline' : 'No baseline'}</span>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600 }}>{painReductionPercent !== null ? 'vs. previous' : 'Need 2 scores'}</span>
               </div>
 
               <div className="glass-panel" style={{ padding: '20px', borderRadius: '20px', display: 'flex', flexDirection: 'column', gap: '8px', background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
@@ -611,6 +621,28 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
                 <option value="FINGER_AMPUTATION">Fingers Only</option>
               </select>
             </div>
+            {profileForm.amputationLevel === 'FINGER_AMPUTATION' && (
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label>Missing Fingers</label>
+                <div className="finger-checkbox-grid">
+                  {FINGER_OPTIONS.map((finger) => (
+                    <label key={finger} className="finger-checkbox">
+                      <input
+                        type="checkbox"
+                        checked={profileForm.missingFingers.includes(finger)}
+                        onChange={(e) => setProfileForm((prev) => ({
+                          ...prev,
+                          missingFingers: e.target.checked
+                            ? Array.from(new Set([...prev.missingFingers, finger]))
+                            : prev.missingFingers.filter((item) => item !== finger)
+                        }))}
+                      />
+                      <span>{finger.charAt(0) + finger.slice(1).toLowerCase()}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="profile-actions" style={{ marginTop: '10px' }}>
               <button type="submit" className="btn btn-primary" disabled={savingProfile} style={{ padding: '12px 24px' }}>
                 {savingProfile ? 'Saving...' : 'Save Profile'}
@@ -627,7 +659,7 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
           <section className="circular-metric-grid">
             <CircularProgressCard value={dailyStreak ? `${dailyStreak}` : '—'} label="Daily Streak" sublabel="days" percentage={dailyStreak ? Math.min(100, dailyStreak) : 0} strokeColor="var(--warning)" />
             <CircularProgressCard value={typeof totalRuns === 'number' ? totalRuns : '—'} label="Sessions" sublabel="total" percentage={totalRuns ? Math.min(100, totalRuns) : 0} strokeColor="var(--accent-cyan)" />
-            <CircularProgressCard value={painReductionPercent !== null ? `${painReductionPercent}%` : '—'} label="Pain Relief" sublabel="baseline" percentage={painReductionPercent !== null ? Math.min(100, Math.max(0, painReductionPercent)) : 0} strokeColor={painReductionPercent !== null && painReductionPercent < 0 ? 'var(--error)' : 'var(--success)'} />
+            <CircularProgressCard value={painReductionPercent !== null ? `${painReductionPercent}%` : '—'} label="Pain Relief" sublabel="previous" percentage={painReductionPercent !== null ? Math.min(100, Math.max(0, painReductionPercent)) : 0} strokeColor={painReductionPercent !== null && painReductionPercent < 0 ? 'var(--error)' : 'var(--success)'} />
             <CircularProgressCard value={avgAccuracy !== null ? `${Math.min(100, avgAccuracy + 3)}` : '--'} label="Score" sublabel="/100" percentage={avgAccuracy !== null ? Math.min(100, avgAccuracy + 3) : 0} strokeColor="var(--accent-cyan)" />
           </section>
 
@@ -649,7 +681,7 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
           <section className="circular-metric-grid">
             <CircularProgressCard value={dailyStreak ? `${dailyStreak}` : '—'} label="Daily Streak" sublabel="days" percentage={dailyStreak ? Math.min(100, dailyStreak) : 0} strokeColor="var(--warning)" />
             <CircularProgressCard value={typeof totalRuns === 'number' ? totalRuns : '—'} label="Sessions" sublabel="total" percentage={totalRuns ? Math.min(100, totalRuns) : 0} strokeColor="var(--accent-cyan)" />
-            <CircularProgressCard value={painReductionPercent !== null ? `${painReductionPercent}%` : '—'} label="Pain Relief" sublabel="baseline" percentage={painReductionPercent !== null ? Math.min(100, Math.max(0, painReductionPercent)) : 0} strokeColor={painReductionPercent !== null && painReductionPercent < 0 ? 'var(--error)' : 'var(--success)'} />
+            <CircularProgressCard value={painReductionPercent !== null ? `${painReductionPercent}%` : '—'} label="Pain Relief" sublabel="previous" percentage={painReductionPercent !== null ? Math.min(100, Math.max(0, painReductionPercent)) : 0} strokeColor={painReductionPercent !== null && painReductionPercent < 0 ? 'var(--error)' : 'var(--success)'} />
             <CircularProgressCard value={avgAccuracy !== null ? `${Math.min(100, avgAccuracy + 3)}` : '--'} label="Score" sublabel="/100" percentage={avgAccuracy !== null ? Math.min(100, avgAccuracy + 3) : 0} strokeColor="var(--accent-cyan)" />
           </section>
 
@@ -676,7 +708,11 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
                   </tr>
                 </thead>
                 <tbody>
-                  {recentSessionRows}
+                  {allSessionRows.length > 0 ? allSessionRows : (
+                    <tr>
+                      <td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '24px' }}>No sessions recorded yet.</td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -704,7 +740,11 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
                 </tr>
               </thead>
               <tbody>
-                {recentSessionRows}
+                {allSessionRows.length > 0 ? allSessionRows : (
+                  <tr>
+                    <td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '24px' }}>No sessions recorded yet.</td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

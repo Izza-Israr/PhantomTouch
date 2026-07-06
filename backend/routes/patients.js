@@ -4,6 +4,10 @@ const supabase = require('../utils/supabaseClient');
 const { normalizeRow, normalizeRows } = require('../utils/supabaseHelpers');
 const auth = require('../middleware/auth');
 const { hashPassword } = require('../utils/authHelper');
+const VALID_FINGERS = new Set(['THUMB', 'INDEX', 'MIDDLE', 'RING', 'PINKY']);
+const normalizeMissingFingers = (value) => Array.isArray(value)
+  ? value.map((finger) => String(finger).toUpperCase()).filter((finger) => VALID_FINGERS.has(finger))
+  : [];
 
 // Get all patients assigned to a clinician (or the current patient if patient role)
 router.get('/', auth, async (req, res) => {
@@ -51,7 +55,7 @@ router.post('/', auth, async (req, res) => {
       return res.status(403).json({ message: 'Unauthorized. Only clinicians can create patients' });
     }
 
-    const { email, password, fullName, dateOfBirth, amputationSide, amputationLevel, skinToneSliderHex, meshScaleMultiplier } = req.body;
+    const { email, password, fullName, dateOfBirth, amputationSide, amputationLevel, missingFingers, skinToneSliderHex, meshScaleMultiplier } = req.body;
 
     if (!email || !password || !fullName || !amputationSide || !amputationLevel) {
       return res.status(400).json({ message: 'Missing required fields' });
@@ -110,6 +114,7 @@ router.post('/', auth, async (req, res) => {
         date_of_birth: dateOfBirth ? new Date(dateOfBirth).toISOString() : null,
         amputation_side: amputationSide,
         amputation_level: amputationLevel,
+        missing_fingers: normalizeMissingFingers(missingFingers),
         skin_tone_slider_hex: skinToneSliderHex || '#aa3bff',
         mesh_scale_multiplier: meshScaleMultiplier || 1.0
       }])
@@ -177,12 +182,13 @@ router.put('/:id', auth, async (req, res) => {
       return res.status(403).json({ message: 'Access denied to this profile' });
     }
 
-    const { fullName, amputationSide, amputationLevel, skinToneSliderHex, meshScaleMultiplier, assignedClinicianId } = req.body;
+    const { fullName, amputationSide, amputationLevel, missingFingers, skinToneSliderHex, meshScaleMultiplier, assignedClinicianId } = req.body;
     const updates = {};
 
     if (fullName) updates.full_name = fullName;
     if (amputationSide) updates.amputation_side = amputationSide;
     if (amputationLevel) updates.amputation_level = amputationLevel;
+    if (missingFingers !== undefined) updates.missing_fingers = normalizeMissingFingers(missingFingers);
     if (skinToneSliderHex) updates.skin_tone_slider_hex = skinToneSliderHex;
     if (meshScaleMultiplier !== undefined) updates.mesh_scale_multiplier = Number(meshScaleMultiplier);
     if (assignedClinicianId && req.user.role === 'ADMIN') updates.assigned_clinician_id = assignedClinicianId;

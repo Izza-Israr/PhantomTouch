@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import axios from 'axios';
 import { LogInIcon, UserIcon } from './Icons';
 
+const FINGER_OPTIONS = ['THUMB', 'INDEX', 'MIDDLE', 'RING', 'PINKY'];
+
 export const AuthScreen = ({ mode = 'login', onAuthSuccess, onNavigate }) => {
   const [isLogin, setIsLogin] = useState(mode === 'login');
   const [role, setRole] = useState('PATIENT'); // PATIENT or CLINICIAN
@@ -16,6 +18,7 @@ export const AuthScreen = ({ mode = 'login', onAuthSuccess, onNavigate }) => {
   // Patient extra fields
   const [amputationSide, setAmputationSide] = useState('LEFT');
   const [amputationLevel, setAmputationLevel] = useState('TRANSRADIAL');
+  const [missingFingers, setMissingFingers] = useState(['INDEX']);
   const [dob, setDob] = useState('');
 
   const [loading, setLoading] = useState(false);
@@ -49,6 +52,7 @@ export const AuthScreen = ({ mode = 'login', onAuthSuccess, onNavigate }) => {
         } else if (role === 'PATIENT') {
           payload.amputationSide = amputationSide;
           payload.amputationLevel = amputationLevel;
+          payload.missingFingers = amputationLevel === 'FINGER_AMPUTATION' ? missingFingers : [];
           if (dob) payload.dateOfBirth = dob;
         }
 
@@ -193,6 +197,27 @@ export const AuthScreen = ({ mode = 'login', onAuthSuccess, onNavigate }) => {
                       onChange={e => setDob(e.target.value)}
                     />
                   </div>
+                  {amputationLevel === 'FINGER_AMPUTATION' && (
+                    <div>
+                      <label>Missing Fingers</label>
+                      <div className="finger-checkbox-grid">
+                        {FINGER_OPTIONS.map((finger) => (
+                          <label key={finger} className="finger-checkbox">
+                            <input
+                              type="checkbox"
+                              checked={missingFingers.includes(finger)}
+                              onChange={(e) => {
+                                setMissingFingers((prev) => e.target.checked
+                                  ? Array.from(new Set([...prev, finger]))
+                                  : prev.filter((item) => item !== finger));
+                              }}
+                            />
+                            <span>{finger.charAt(0) + finger.slice(1).toLowerCase()}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </>

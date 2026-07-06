@@ -168,8 +168,7 @@ router.get('/patient/:patientId', auth, async (req, res) => {
       .from('therapy_sessions')
       .select('*')
       .eq('patient_id', patientId)
-      .order('start_time', { ascending: false })
-      .limit(50);
+      .order('start_time', { ascending: false });
 
     if (error) {
       console.error('Fetch sessions history error:', error);

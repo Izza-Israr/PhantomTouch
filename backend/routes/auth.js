@@ -4,6 +4,10 @@ const supabase = require('../utils/supabaseClient');
 const { normalizeRow, normalizeRows } = require('../utils/supabaseHelpers');
 const { hashPassword, verifyPassword, generateToken } = require('../utils/authHelper');
 const auth = require('../middleware/auth');
+const VALID_FINGERS = new Set(['THUMB', 'INDEX', 'MIDDLE', 'RING', 'PINKY']);
+const normalizeMissingFingers = (value) => Array.isArray(value)
+  ? value.map((finger) => String(finger).toUpperCase()).filter((finger) => VALID_FINGERS.has(finger))
+  : [];
 
 // Register Endpoint
 router.post('/register', async (req, res) => {
@@ -90,6 +94,7 @@ router.post('/register', async (req, res) => {
           date_of_birth: extraFields.dateOfBirth ? new Date(extraFields.dateOfBirth).toISOString() : null,
           amputation_side: extraFields.amputationSide,
           amputation_level: extraFields.amputationLevel,
+          missing_fingers: normalizeMissingFingers(extraFields.missingFingers),
           skin_tone_slider_hex: extraFields.skinToneSliderHex || '#aa3bff',
           mesh_scale_multiplier: extraFields.meshScaleMultiplier || 1.0
         }])

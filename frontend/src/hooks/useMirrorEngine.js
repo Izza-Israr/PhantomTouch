@@ -151,6 +151,7 @@ export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
     if (!pose[healthyIdx.sh]) { hideArm(); return; }
 
     const healthyHand = healthySide === 'LEFT' ? leftHand : rightHand;
+    const amputatedHand = ampSide === 'LEFT' ? leftHand : rightHand;
 
     const videoRect = getVideoRect();
 
@@ -162,7 +163,7 @@ export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
 
     // Phantom hand: rendered in magenta, fingers mirror the healthy hand
     const phantom = phantomHandRef.current.update(
-      { pose, hand: healthyHand, indices: ampIdx, isPhantom: true },
+      { pose, hand: healthyHand, amputatedHand, indices: ampIdx, isPhantom: true },
       cameraRef.current, videoRect
     );
 
