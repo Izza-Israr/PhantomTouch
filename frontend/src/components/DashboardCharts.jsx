@@ -45,6 +45,11 @@ export const PremiumLineChart = ({
   const areaPath = points.length
     ? `${points[0].x},${height - paddingY} ${points.map(p => `${p.x},${p.y}`).join(' ')} ${points[points.length - 1].x},${height - paddingY}`
     : '';
+  const getTooltipTransform = (point) => {
+    if (point.x < paddingX + 50) return 'translateX(0)';
+    if (point.x > width - paddingX - 50) return 'translateX(-100%)';
+    return 'translateX(-50%)';
+  };
 
   const gridLines = Array.from({ length: 4 }).map((_, i) => {
     const ratio = i / 3;
@@ -54,13 +59,13 @@ export const PremiumLineChart = ({
   });
 
   return (
-    <div className="glass-panel clinical-card animate-fade-in" style={{ position: 'relative' }}>
+    <div className="glass-panel clinical-card animate-fade-in premium-chart-card" style={{ position: 'relative' }}>
       <h3 style={{ fontSize: '1.08rem', marginBottom: 18, fontFamily: 'var(--font-display)', fontWeight: 700, display: 'flex', justifyContent: 'space-between', gap: 12 }}>
         <span>{title}</span>
         <span style={{ fontSize: '0.85rem', color: stroke, whiteSpace: 'nowrap' }}>Peak: {maxVal}{suffix}</span>
       </h3>
 
-      <div style={{ position: 'relative', width: '100%', overflowX: 'auto' }}>
+      <div className="premium-chart-plot">
         <svg viewBox={`0 0 ${width} ${height}`} width="100%" height="220" style={{ overflow: 'visible' }}>
           <defs>
             <linearGradient id={`grad-${yField}`} x1="0" y1="0" x2="0" y2="1">
@@ -105,7 +110,7 @@ export const PremiumLineChart = ({
             position: 'absolute',
             left: `${(points[hoveredPoint].x / width) * 100}%`,
             top: `${(points[hoveredPoint].y / height) * 100 - 45}%`,
-            transform: 'translateX(-50%)',
+            transform: getTooltipTransform(points[hoveredPoint]),
             background: 'var(--bg-secondary)',
             border: `1px solid ${stroke}`,
             padding: '6px 12px',

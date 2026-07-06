@@ -97,6 +97,8 @@ export const TherapyGame = ({ profile, onNavigate }) => {
   const [accuracy, setAccuracy] = useState(0);
   const [hoverPct, setHoverPct] = useState(0);
   const [sessionSaved, setSessionSaved] = useState(null);
+  const [isPaused, setIsPaused] = useState(false);
+  const [painScore, setPainScore] = useState(4);
 
   // null = not yet chosen; 'LEFT' or 'RIGHT' = amputated side selected by user
   const [amputationSide, setAmputationSide] = useState(profile?.amputationSide || null);
@@ -125,6 +127,7 @@ export const TherapyGame = ({ profile, onNavigate }) => {
   const debugPointerRef = useRef(null);
   const particlesRef = useRef([]);
   const gameStateRef = useRef('ready');
+  const sessionEndInProgressRef = useRef(false);
   useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
 
   const landmarksHandlerRef = useRef(null);
@@ -167,11 +170,11 @@ export const TherapyGame = ({ profile, onNavigate }) => {
   }, [profile?._id, profile?.id]);
 
   const handleLandmarks = useCallback((real, phantom) => {
+    if (isPaused) return;
     if (!targetPairRef.current || gameStateRef.current !== 'running' || !real || !phantom) return;
     const { a: targetA, b: targetB } = targetPairRef.current;
     if (!targetA || !targetB) return;
 
-    // Shoulder transformation logic removed here to allow targets to stay fixed in world coordinates
     const indexTip = real[8];
     const thumbTip = real[4];
     if (!indexTip || !thumbTip) return;
@@ -179,29 +182,23 @@ export const TherapyGame = ({ profile, onNavigate }) => {
     const pinchX = (indexTip.x + thumbTip.x) / 2;
     const pinchY = (indexTip.y + thumbTip.y) / 2;
 
-    // Check distance against target A's ORIGINAL fixed position so the 
-    // magnetic snap doesn't cause it to follow the hand and lock infinitely.
     const basePosA = targetA.userData?.originalPosition || targetA.mesh.position;
     const distA = Math.hypot(
       pinchX - basePosA.x,
       pinchY - basePosA.y,
     );
 
-    // Dynamically update Target B's resting position relative to the phantom shoulder
-    // so it maintains the exact same offset as Target A has to the real shoulder.
     const realSh = real[21];
     const phanSh = phantom[21];
     if (realSh && phanSh && targetB.userData?.originalPosition && targetA.userData?.originalPosition) {
       const dx = targetA.userData.originalPosition.x - realSh.x;
       const dy = targetA.userData.originalPosition.y - realSh.y;
 
-      // Mirror the X offset, preserve the Y offset
       targetB.mesh.position.x = phanSh.x - dx;
       targetB.mesh.position.y = phanSh.y + dy;
       targetB.light.position.copy(targetB.mesh.position);
     }
 
-    // Phantom pinch coordinates
     if (debugPointerRef.current) {
       debugPointerRef.current.position.set(pinchX, pinchY, 0.05);
     }
@@ -247,11 +244,8 @@ export const TherapyGame = ({ profile, onNavigate }) => {
         }
       }
     }
-  }, [sceneRef]);
+  }, [sceneRef, isPaused]);
 
-  // Called from the side-selection screen; commits the choice into configRef
-  // so that useMirrorEngine and spawnTargetPair both read the correct side.
-  // Passing null just goes back to the picker without touching configRef.
   const selectSide = useCallback((side) => {
     if (side !== null) configRef.current.amputationSide = side;
     setAmputationSide(side);
@@ -266,6 +260,7 @@ export const TherapyGame = ({ profile, onNavigate }) => {
   useEffect(() => { landmarksHandlerRef.current = onLandmarksUpdate; });
 
   const onFrame = useCallback((dt) => {
+    if (isPaused) return;
     const pair = targetPairRef.current;
     if (!pair) return;
     for (const target of [pair.a, pair.b]) {
@@ -284,7 +279,35 @@ export const TherapyGame = ({ profile, onNavigate }) => {
         particlesRef.current.splice(i, 1);
       }
     }
-  }, [sceneRef]);
+  }, [sceneRef, isPaused]);
+
+  const formatToPakistanIso = useCallback((date) => {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Karachi',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+      timeZoneName: 'shortOffset'
+    }).formatToParts(date).reduce((acc, part) => {
+      if (part.type !== 'literal') acc[part.type] = part.value;
+      return acc;
+    }, {});
+
+    const offsetMatch = (parts.timeZoneName || '').match(/GMT([+-])(\d{1,2})(?::?(\d{2}))?/);
+    let offset = 'Z';
+    if (offsetMatch) {
+      const sign = offsetMatch[1];
+      const hours = offsetMatch[2].padStart(2, '0');
+      const minutes = offsetMatch[3] || '00';
+      offset = `${sign}${hours}:${minutes}`;
+    }
+
+    return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}${offset}`;
+  }, []);
 
   const saveSession = useCallback(async () => {
     try {
@@ -295,11 +318,12 @@ export const TherapyGame = ({ profile, onNavigate }) => {
       const payload = {
         patientId,
         prescriptionId,
-        startTime: new Date(statsRef.current.startTime).toISOString(),
-        endTime: new Date().toISOString(),
+        startTime: formatToPakistanIso(new Date(statsRef.current.startTime)),
+        endTime: formatToPakistanIso(new Date()),
         targetsSpawned: statsRef.current.spawned,
         targetsHit: statsRef.current.hits,
         peakRangeOfMotionDegrees: statsRef.current.peakROM,
+        painLevel: painScore,
         telemetryStream: statsRef.current.telemetry
       };
 
@@ -325,9 +349,13 @@ export const TherapyGame = ({ profile, onNavigate }) => {
       console.error('Failed to save therapy session:', error.response ? error.response.data : error.message || error);
       return false;
     }
-  }, [profile]);
+  }, [formatToPakistanIso, painScore, profile]);
 
   const finishSession = useCallback(async () => {
+    if (sessionEndInProgressRef.current) return;
+    if (gameStateRef.current === 'saving' || gameStateRef.current === 'finished') return;
+    sessionEndInProgressRef.current = true;
+
     setGameState('saving');
     stopRenderLoop();
     destroy();
@@ -342,6 +370,7 @@ export const TherapyGame = ({ profile, onNavigate }) => {
   }, [destroy, stopRenderLoop, saveSession]);
 
   const startSession = useCallback(() => {
+    sessionEndInProgressRef.current = false;
     statsRef.current = { hits: 0, spawned: 1, startTime: Date.now(), endTime: null, peakROM: 0, telemetry: [], startPos: null };
     configRef.current.hoverAccumMs = 0;
     setTargetsHit(0);
@@ -349,6 +378,7 @@ export const TherapyGame = ({ profile, onNavigate }) => {
     setSecondsLeft(configRef.current.prescribedDuration || 120);
     setHoverPct(0);
     setSessionSaved(null);
+    setIsPaused(false);
     setGameState('running');
   }, []);
 
@@ -372,7 +402,7 @@ export const TherapyGame = ({ profile, onNavigate }) => {
   }, [gameState, initThreeJS, startRenderLoop, onFrame, initMediaPipe, destroy, stopRenderLoop]);
 
   useEffect(() => {
-    if (gameState !== 'running') return;
+    if (gameState !== 'running' || isPaused) return;
     const id = setInterval(() => {
       setSecondsLeft((prev) => {
         if (prev <= 1) { clearInterval(id); finishSession(); return 0; }
@@ -380,10 +410,7 @@ export const TherapyGame = ({ profile, onNavigate }) => {
       });
     }, 1000);
     return () => clearInterval(id);
-  }, [gameState, finishSession]);
-
-  const mm = String(Math.floor(secondsLeft / 60)).padStart(2, '0');
-  const ss = String(secondsLeft % 60).padStart(2, '0');
+  }, [gameState, isPaused, finishSession]);
 
   return (
     <div className={'animate-fade-in ' + (gameState === 'running' ? 'mirror-session-shell' : '')}
@@ -435,54 +462,258 @@ export const TherapyGame = ({ profile, onNavigate }) => {
         </div>
       )}
 
-      {gameState === 'running' && (
-        <div className="mirror-session-stage" style={{
-          position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
-          overflow: 'hidden', backgroundColor: '#000', zIndex: 99,
-        }}>
-          <video ref={videoRef} className="mirror-camera-feed" autoPlay playsInline muted
-            style={{
-              position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
-              objectFit: 'contain', transform: 'scaleX(-1)', zIndex: 1
-            }} />
+      {gameState === 'running' && (() => {
+        const totalDuration = configRef.current.prescribedDuration || 120;
+        const elapsedSeconds = totalDuration - secondsLeft;
 
-          <div ref={containerRef} className="mirror-canvas-layer"
-            style={{
-              position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
-              zIndex: 2, pointerEvents: 'none'
-            }}>
-            <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block' }} />
-          </div>
+        const formatMinSec = (sec) => {
+          const m = String(Math.floor(sec / 60)).padStart(2, '0');
+          const s = String(sec % 60).padStart(2, '0');
+          return `${m}:${s}`;
+        };
 
-          <div className="mirror-hud mirror-hud-top" style={{
-            position: 'absolute', top: 0, left: 0, right: 0, zIndex: 3,
-            display: 'flex', alignItems: 'center', padding: '20px 30px',
-            background: 'linear-gradient(to bottom, rgba(0,0,0,0.8), transparent)',
-          }}>
-            <div style={{ color: '#fff', marginRight: 30, fontSize: '1.4rem', fontFamily: 'monospace' }}>
-              <strong>{mm}:{ss}</strong>
-            </div>
-            <div style={{ color: '#00FFCC', fontSize: '1.4rem', fontFamily: 'monospace' }}>
-              <strong>Hits: {targetsHit}/{targetsSpawned}</strong>
-            </div>
-            {hoverPct > 0 && (
-              <div className="font-bold animate-pulse"
-                style={{ color: '#ffb703', marginLeft: 25, fontSize: '1.2rem' }}>
-                Target Lock {hoverPct}%
+        const elapsedStr = formatMinSec(elapsedSeconds);
+        const remainingStr = formatMinSec(secondsLeft);
+        const progressPercent = Math.min(100, Math.round((elapsedSeconds / totalDuration) * 100));
+
+        const radiusHUD = 22;
+        const strokeWidthHUD = 4;
+        const circumferenceHUD = 2 * Math.PI * radiusHUD;
+        const offsetHUD = circumferenceHUD - (progressPercent / 100) * circumferenceHUD;
+
+        return (
+          <div className="game-split-layout mirror-session-shell">
+            {/* Left Column: Vertical HUD Sidebar */}
+            <div className="game-hud-panel">
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 800, marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--accent-cyan)' }} />
+                Active Therapy
+              </h2>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '12px', fontWeight: 600 }}>
+                Session in progress
+              </p>
+
+              {/* SESSION TIMER CARD */}
+              <div className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '20px' }}>
+                <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Session Timer</span>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <strong style={{ fontSize: '2.2rem', fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{elapsedStr}</strong>
+                    <span style={{ fontSize: '0.82rem', color: 'var(--accent-cyan)', fontWeight: 700, marginTop: '2px' }}>
+                      Remaining: {remainingStr}
+                    </span>
+                  </div>
+
+                  {/* Circular timer indicator */}
+                  <div style={{ position: 'relative', width: '56px', height: '56px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <svg width="56" height="56" viewBox="0 0 56 56" style={{ transform: 'rotate(-90deg)' }}>
+                      <circle
+                        cx="28"
+                        cy="28"
+                        r={radiusHUD}
+                        fill="transparent"
+                        stroke="var(--border-color)"
+                        strokeWidth={strokeWidthHUD}
+                      />
+                      <circle
+                        cx="28"
+                        cy="28"
+                        r={radiusHUD}
+                        fill="transparent"
+                        stroke="var(--accent-cyan)"
+                        strokeWidth={strokeWidthHUD}
+                        strokeDasharray={circumferenceHUD}
+                        strokeDashoffset={offsetHUD}
+                        strokeLinecap="round"
+                        style={{ transition: 'stroke-dashoffset 0.3s ease' }}
+                      />
+                    </svg>
+                    <div style={{ position: 'absolute', fontSize: '0.78rem', fontWeight: '800', color: 'var(--accent-cyan)' }}>
+                      {progressPercent}%
+                    </div>
+                  </div>
+                </div>
+
+                {/* Linear timer indicator */}
+                <div style={{ width: '100%', height: '6px', borderRadius: '3px', background: 'var(--border-color)', overflow: 'hidden' }}>
+                  <div style={{ width: `${progressPercent}%`, height: '100%', backgroundColor: 'var(--accent-cyan)', transition: 'width 0.3s ease' }} />
+                </div>
               </div>
-            )}
-            <div style={{ marginLeft: 'auto', display: 'flex', gap: 12, alignItems: 'center' }}>
-              {peakROM > 0 && (
-                <span style={{ color: '#aaa', fontFamily: 'monospace', fontSize: '0.9rem' }}>
-                  ROM {peakROM}&#xb0;
-                </span>
-              )}
-              <button className="btn btn-secondary" onClick={finishSession}
-                style={{ padding: '10px 24px', fontSize: '1rem', cursor: 'pointer' }}>End</button>
+
+              {/* PAIN SCALE CARD */}
+              <div className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Pain Scale</span>
+                  <strong style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--warning)' }}>{painScore} / 10</strong>
+                </div>
+
+                {/* Slider */}
+                <div className="pain-slider-container">
+                  <input
+                    type="range"
+                    min="0"
+                    max="10"
+                    value={painScore}
+                    onChange={(e) => setPainScore(Number(e.target.value))}
+                    className="pain-slider"
+                  />
+                  <div className="pain-labels">
+                    <span>No pain</span>
+                    <span>Moderate</span>
+                    <span>Severe</span>
+                  </div>
+                </div>
+
+                {/* Circle Buttons */}
+                <div className="pain-number-row">
+                  {Array.from({ length: 11 }).map((_, val) => {
+                    const isActive = painScore === val;
+                    let btnColorStyle = {
+                      width: '24px',
+                      height: '24px',
+                      borderRadius: '50%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '0.78rem',
+                      fontWeight: '700',
+                      border: 'none',
+                      cursor: 'pointer',
+                      background: 'var(--bg-primary)',
+                      color: 'var(--text-secondary)',
+                      transition: 'var(--transition-smooth)'
+                    };
+
+                    if (val <= 3) {
+                      btnColorStyle.background = isActive ? '#10b981' : '#e6fdf5';
+                      btnColorStyle.color = isActive ? '#ffffff' : '#10b981';
+                    } else if (isActive) {
+                      btnColorStyle.background = 'var(--warning)';
+                      btnColorStyle.color = '#ffffff';
+                      btnColorStyle.boxShadow = '0 2px 8px rgba(245, 158, 11, 0.4)';
+                    }
+
+                    return (
+                      <button
+                        key={val}
+                        type="button"
+                        style={btnColorStyle}
+                        onClick={() => setPainScore(val)}
+                      >
+                        {val}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* CONTROLS CARD */}
+              <div className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '20px' }}>
+                <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Controls</span>
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={() => setIsPaused(false)}
+                    style={{
+                      flex: 1,
+                      borderRadius: '14px',
+                      background: 'var(--accent-cyan)',
+                      color: '#ffffff',
+                      padding: '10px 16px',
+                      fontSize: '0.9rem',
+                      opacity: !isPaused ? 0.6 : 1,
+                      cursor: !isPaused ? 'default' : 'pointer'
+                    }}
+                    disabled={!isPaused}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <polygon points="5 3 19 12 5 21 5 3" />
+                    </svg>
+                    Start
+                  </button>
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => setIsPaused(true)}
+                    style={{
+                      flex: 1,
+                      borderRadius: '14px',
+                      background: '#fff5f5',
+                      color: '#ef4444',
+                      border: '1px solid #fee2e2',
+                      padding: '10px 16px',
+                      fontSize: '0.9rem',
+                      opacity: isPaused ? 0.6 : 1,
+                      cursor: isPaused ? 'default' : 'pointer'
+                    }}
+                    disabled={isPaused}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="4" y="4" width="16" height="16" />
+                    </svg>
+                    Stop
+                  </button>
+                </div>
+
+                {/* Status Indicator */}
+                <div className={`hud-alert-banner ${isPaused ? 'alert-warning' : 'alert-success'}`}>
+                  <span className="bullet-dot" />
+                  {isPaused ? 'Session paused' : 'Active tracking'}
+                </div>
+              </div>
+
+              {/* Game Stats Info card */}
+              <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Targets Spawned:</span>
+                  <strong style={{ color: 'var(--text-primary)' }}>{targetsSpawned}</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Targets Hit:</span>
+                  <strong style={{ color: 'var(--accent-cyan)' }}>{targetsHit}</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Range of Motion:</span>
+                  <strong style={{ color: 'var(--warning)' }}>{peakROM}&deg;</strong>
+                </div>
+                {hoverPct > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Target Lock:</span>
+                    <strong style={{ color: 'var(--success)' }}>{hoverPct}%</strong>
+                  </div>
+                )}
+                <button
+                  className="btn btn-secondary"
+                  onClick={finishSession}
+                  style={{ width: '100%', padding: '10px', borderRadius: '12px', marginTop: '10px' }}
+                >
+                  End Session
+                </button>
+              </div>
+            </div>
+
+            {/* Right Column: ThreeJS Stage & Camera Video */}
+            <div className="game-stage-panel">
+              <video ref={videoRef} className="mirror-camera-feed" autoPlay playsInline muted
+                style={{
+                  position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+                  objectFit: 'contain', transform: 'scaleX(-1)', zIndex: 1
+                }} />
+
+              <div ref={containerRef} className="mirror-canvas-layer"
+                style={{
+                  position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+                  zIndex: 2, pointerEvents: 'none'
+                }}>
+                <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block' }} />
+              </div>
+
+              <div className="mirror-vignette" />
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {gameState === 'saving' && (
         <div className="glass-panel p-8" style={{ maxWidth: 580, margin: '40px auto', textAlign: 'center' }}>

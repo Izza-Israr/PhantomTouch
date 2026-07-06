@@ -9,7 +9,8 @@ const therapySessionSchema = new mongoose.Schema({
   targetsSpawned: { type: Number, default: 0 },
   targetsHit: { type: Number, default: 0 },
   accuracyPercentage: { type: Number, default: 0 },
-  peakRangeOfMotionDegrees: { type: Number, default: 0 }
+  peakRangeOfMotionDegrees: { type: Number, default: 0 },
+  painLevel: { type: Number, default: null, min: 0, max: 10 }
 }, { 
   timestamps: false,
   collection: 'therapy_sessions' 

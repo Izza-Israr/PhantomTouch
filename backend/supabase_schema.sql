@@ -3,6 +3,11 @@
 
 create extension if not exists "pgcrypto";
 
+-- Display timestamp values in Pakistan Standard Time (PST, UTC+05:00) for SQL sessions.
+-- Note: timestamptz values are still stored as absolute instants by PostgreSQL.
+set timezone to 'Asia/Karachi';
+alter database postgres set timezone to 'Asia/Karachi';
+
 create table users (
   id uuid primary key default gen_random_uuid(),
   email text not null unique,
@@ -64,8 +69,16 @@ create table therapy_sessions (
   targets_spawned integer not null default 0,
   targets_hit integer not null default 0,
   accuracy_percentage numeric not null default 0,
-  peak_range_of_motion_degrees numeric not null default 0
+  peak_range_of_motion_degrees numeric not null default 0,
+  pain_level integer default null check (pain_level is null or (pain_level >= 0 and pain_level <= 10))
 );
+
+-- Run this if the table already exists to add the column:
+-- ALTER TABLE therapy_sessions ADD COLUMN IF NOT EXISTS pain_level integer check (pain_level is null or (pain_level >= 0 and pain_level <= 10));
+
+-- Ensure runtime DB migrations: add commonly used columns if missing.
+ALTER TABLE therapy_sessions
+  ADD COLUMN IF NOT EXISTS pain_level integer check (pain_level is null or (pain_level >= 0 and pain_level <= 10));
 
 create table chat_rooms (
   id uuid primary key default gen_random_uuid(),
@@ -104,4 +117,14 @@ create table kinematic_telemetry (
   session_id uuid not null references therapy_sessions(id) on delete cascade,
   minute_bucket_index integer not null default 0,
   data_stream jsonb not null default '[]'::jsonb
+);
+
+create table notifications (
+  id uuid primary key default gen_random_uuid(),
+  recipient_user_id uuid not null references users(id) on delete cascade,
+  patient_id uuid references patients(id) on delete set null,
+  type text not null,
+  message text not null,
+  is_read boolean not null default false,
+  created_at timestamptz not null default now()
 );
