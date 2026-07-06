@@ -69,6 +69,7 @@ create table therapy_sessions (
   prescription_id uuid references clinical_prescriptions(id) on delete set null,
   start_time timestamptz not null,
   end_time timestamptz not null,
+  session_type text not null default 'GAME' check (session_type in ('GAME', 'CAMERA')),
   total_duration_seconds integer not null,
   targets_spawned integer not null default 0,
   targets_hit integer not null default 0,
@@ -83,6 +84,9 @@ create table therapy_sessions (
 -- Ensure runtime DB migrations: add commonly used columns if missing.
 ALTER TABLE therapy_sessions
   ADD COLUMN IF NOT EXISTS pain_level integer check (pain_level is null or (pain_level >= 0 and pain_level <= 10));
+
+ALTER TABLE therapy_sessions
+  ADD COLUMN IF NOT EXISTS session_type text not null default 'GAME' check (session_type in ('GAME', 'CAMERA'));
 
 create table chat_rooms (
   id uuid primary key default gen_random_uuid(),

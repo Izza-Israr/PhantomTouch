@@ -90,6 +90,11 @@ function burstParticles(scene, pos, toneHex, particlesRef) {
 
 export const TherapyGame = ({ profile, onNavigate }) => {
   const [gameState, setGameState] = useState('ready');
+  const [practiceMode, setPracticeMode] = useState(() => {
+    const savedMode = sessionStorage.getItem('phantomtouchPracticeMode');
+    sessionStorage.removeItem('phantomtouchPracticeMode');
+    return savedMode === 'camera' || savedMode === 'game' ? savedMode : null;
+  });
   const [secondsLeft, setSecondsLeft] = useState(120);
   const [targetsHit, setTargetsHit] = useState(0);
   const [targetsSpawned, setTargetsSpawned] = useState(0);
@@ -180,64 +185,66 @@ export const TherapyGame = ({ profile, onNavigate }) => {
 
   const handleLandmarks = useCallback((real, phantom) => {
     if (isPaused) return;
-    if (!targetPairRef.current || gameStateRef.current !== 'running' || !real || !phantom) return;
-    const { a: targetA, b: targetB } = targetPairRef.current;
-    if (!targetA || !targetB) return;
+    if (gameStateRef.current !== 'running' || !real || !phantom) return;
 
     const indexTip = real[8];
     const thumbTip = real[4];
-    if (!indexTip || !thumbTip) return;
 
-    const pinchX = (indexTip.x + thumbTip.x) / 2;
-    const pinchY = (indexTip.y + thumbTip.y) / 2;
+    if (practiceMode === 'game' && targetPairRef.current && indexTip && thumbTip) {
+      const { a: targetA, b: targetB } = targetPairRef.current;
+      if (!targetA || !targetB) return;
 
-    const basePosA = targetA.userData?.originalPosition || targetA.mesh.position;
-    const distA = Math.hypot(
-      pinchX - basePosA.x,
-      pinchY - basePosA.y,
-    );
+      const pinchX = (indexTip.x + thumbTip.x) / 2;
+      const pinchY = (indexTip.y + thumbTip.y) / 2;
 
-    const realSh = real[21];
-    const phanSh = phantom[21];
-    if (realSh && phanSh && targetB.userData?.originalPosition && targetA.userData?.originalPosition) {
-      const dx = targetA.userData.originalPosition.x - realSh.x;
-      const dy = targetA.userData.originalPosition.y - realSh.y;
+      const basePosA = targetA.userData?.originalPosition || targetA.mesh.position;
+      const distA = Math.hypot(
+        pinchX - basePosA.x,
+        pinchY - basePosA.y,
+      );
 
-      targetB.mesh.position.x = phanSh.x - dx;
-      targetB.mesh.position.y = phanSh.y + dy;
-      targetB.light.position.copy(targetB.mesh.position);
-    }
+      const realSh = real[21];
+      const phanSh = phantom[21];
+      if (realSh && phanSh && targetB.userData?.originalPosition && targetA.userData?.originalPosition) {
+        const dx = targetA.userData.originalPosition.x - realSh.x;
+        const dy = targetA.userData.originalPosition.y - realSh.y;
 
-    if (debugPointerRef.current) {
-      debugPointerRef.current.position.set(pinchX, pinchY, 0.05);
-    }
-
-    if (distA < 0.70) {
-      configRef.current.hoverAccumMs += 25;
-      const pct = Math.min(100,
-        (configRef.current.hoverAccumMs / configRef.current.requiredHoverDwellTimeMs) * 100);
-      setHoverPct(Math.round(pct));
-
-      if (configRef.current.hoverAccumMs >= configRef.current.requiredHoverDwellTimeMs) {
-        playSuccessChime();
-        if (sceneRef.current) {
-          burstParticles(sceneRef.current, targetA.mesh.position.clone(),
-            configRef.current.skinToneSliderHex, particlesRef);
-          burstParticles(sceneRef.current, targetB.mesh.position.clone(),
-            configRef.current.skinToneSliderHex, particlesRef);
-        }
-        statsRef.current.hits++;
-        setTargetsHit(statsRef.current.hits);
-        configRef.current.hoverAccumMs = 0;
-        setHoverPct(0);
-        spawnTargetPair(targetA, targetB, configRef);
-        statsRef.current.spawned++;
-        setTargetsSpawned(statsRef.current.spawned);
+        targetB.mesh.position.x = phanSh.x - dx;
+        targetB.mesh.position.y = phanSh.y + dy;
+        targetB.light.position.copy(targetB.mesh.position);
       }
-    } else {
-      configRef.current.hoverAccumMs = Math.max(0, configRef.current.hoverAccumMs - 12);
-      setHoverPct(Math.round(
-        (configRef.current.hoverAccumMs / configRef.current.requiredHoverDwellTimeMs) * 100));
+
+      if (debugPointerRef.current) {
+        debugPointerRef.current.position.set(pinchX, pinchY, 0.05);
+      }
+
+      if (distA < 0.70) {
+        configRef.current.hoverAccumMs += 25;
+        const pct = Math.min(100,
+          (configRef.current.hoverAccumMs / configRef.current.requiredHoverDwellTimeMs) * 100);
+        setHoverPct(Math.round(pct));
+
+        if (configRef.current.hoverAccumMs >= configRef.current.requiredHoverDwellTimeMs) {
+          playSuccessChime();
+          if (sceneRef.current) {
+            burstParticles(sceneRef.current, targetA.mesh.position.clone(),
+              configRef.current.skinToneSliderHex, particlesRef);
+            burstParticles(sceneRef.current, targetB.mesh.position.clone(),
+              configRef.current.skinToneSliderHex, particlesRef);
+          }
+          statsRef.current.hits++;
+          setTargetsHit(statsRef.current.hits);
+          configRef.current.hoverAccumMs = 0;
+          setHoverPct(0);
+          spawnTargetPair(targetA, targetB, configRef);
+          statsRef.current.spawned++;
+          setTargetsSpawned(statsRef.current.spawned);
+        }
+      } else {
+        configRef.current.hoverAccumMs = Math.max(0, configRef.current.hoverAccumMs - 12);
+        setHoverPct(Math.round(
+          (configRef.current.hoverAccumMs / configRef.current.requiredHoverDwellTimeMs) * 100));
+      }
     }
 
     const wrist = real[0];
@@ -253,7 +260,7 @@ export const TherapyGame = ({ profile, onNavigate }) => {
         }
       }
     }
-  }, [sceneRef, isPaused]);
+  }, [sceneRef, isPaused, practiceMode]);
 
   const selectSide = useCallback((side) => {
     if (side !== null) configRef.current.amputationSide = side;
@@ -327,6 +334,7 @@ export const TherapyGame = ({ profile, onNavigate }) => {
       const payload = {
         patientId,
         prescriptionId,
+        sessionType: practiceMode === 'camera' ? 'CAMERA' : 'GAME',
         startTime: formatToPakistanIso(new Date(statsRef.current.startTime)),
         endTime: formatToPakistanIso(new Date()),
         targetsSpawned: statsRef.current.spawned,
@@ -358,7 +366,7 @@ export const TherapyGame = ({ profile, onNavigate }) => {
       console.error('Failed to save therapy session:', error.response ? error.response.data : error.message || error);
       return false;
     }
-  }, [formatToPakistanIso, painScore, profile]);
+  }, [formatToPakistanIso, painScore, practiceMode, profile]);
 
   const finishSession = useCallback(async () => {
     if (sessionEndInProgressRef.current) return;
@@ -369,36 +377,41 @@ export const TherapyGame = ({ profile, onNavigate }) => {
     stopRenderLoop();
     destroy();
     setAccuracy(
-      statsRef.current.spawned > 0
+      practiceMode === 'game' && statsRef.current.spawned > 0
         ? Math.round((statsRef.current.hits / statsRef.current.spawned) * 100)
         : 0,
     );
     const saved = await saveSession();
     setSessionSaved(saved);
     setGameState('finished');
-  }, [destroy, stopRenderLoop, saveSession]);
+  }, [destroy, practiceMode, stopRenderLoop, saveSession]);
 
   const startSession = useCallback(() => {
     sessionEndInProgressRef.current = false;
-    statsRef.current = { hits: 0, spawned: 1, startTime: Date.now(), endTime: null, peakROM: 0, telemetry: [], startPos: null };
+    statsRef.current = { hits: 0, spawned: practiceMode === 'game' ? 1 : 0, startTime: Date.now(), endTime: null, peakROM: 0, telemetry: [], startPos: null };
     configRef.current.hoverAccumMs = 0;
     setTargetsHit(0);
-    setTargetsSpawned(1);
+    setTargetsSpawned(practiceMode === 'game' ? 1 : 0);
     setSecondsLeft(configRef.current.prescribedDuration || 120);
     setHoverPct(0);
     setSessionSaved(null);
     setIsPaused(false);
     setGameState('running');
-  }, []);
+  }, [practiceMode]);
 
   useEffect(() => {
     if (gameState !== 'running') return;
     const scene = initThreeJS(canvasRef.current, containerRef.current);
-    const tA = makeTargetMesh(scene);
-    const tB = makeTargetMesh(scene);
-    spawnTargetPair(tA, tB, configRef);
-    targetPairRef.current = { a: tA, b: tB };
-    debugPointerRef.current = makeDebugPointer(scene);
+    if (practiceMode === 'game') {
+      const tA = makeTargetMesh(scene);
+      const tB = makeTargetMesh(scene);
+      spawnTargetPair(tA, tB, configRef);
+      targetPairRef.current = { a: tA, b: tB };
+      debugPointerRef.current = makeDebugPointer(scene);
+    } else {
+      targetPairRef.current = null;
+      debugPointerRef.current = null;
+    }
     particlesRef.current = [];
     startRenderLoop(onFrame);
     initMediaPipe(videoRef.current);
@@ -408,7 +421,7 @@ export const TherapyGame = ({ profile, onNavigate }) => {
       targetPairRef.current = null;
       debugPointerRef.current = null;
     };
-  }, [gameState, initThreeJS, startRenderLoop, onFrame, initMediaPipe, destroy, stopRenderLoop]);
+  }, [gameState, practiceMode, initThreeJS, startRenderLoop, onFrame, initMediaPipe, destroy, stopRenderLoop]);
 
   useEffect(() => {
     if (gameState !== 'running' || isPaused) return;
@@ -425,7 +438,26 @@ export const TherapyGame = ({ profile, onNavigate }) => {
     <div className={'animate-fade-in ' + (gameState === 'running' ? 'mirror-session-shell' : '')}
       style={{ width: '100%', height: '100%' }}>
 
-      {gameState === 'ready' && !amputationSide && (
+      {gameState === 'ready' && !practiceMode && (
+        <div className="glass-panel p-8 practice-mode-panel">
+          <h2>Choose Practice Mode</h2>
+          <p style={{ marginTop: 10, opacity: 0.75, fontSize: '0.95rem' }}>
+            Use camera-only mirror therapy for free posing, or play the target game for scored practice.
+          </p>
+          <div className="practice-mode-grid">
+            <button className="practice-mode-card" onClick={() => setPracticeMode('camera')}>
+              <strong>Camera Mirror</strong>
+              <span>Pose freely and save duration, pain, and range of motion.</span>
+            </button>
+            <button className="practice-mode-card" onClick={() => setPracticeMode('game')}>
+              <strong>Therapy Game</strong>
+              <span>Hit targets and save accuracy, score, pain, and range of motion.</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {gameState === 'ready' && practiceMode && !amputationSide && (
         <div className="glass-panel p-8" style={{ maxWidth: 560, margin: '60px auto', textAlign: 'center' }}>
           <h2>Which side is amputated?</h2>
           <p style={{ marginTop: 10, opacity: 0.75, fontSize: '0.95rem' }}>
@@ -446,9 +478,9 @@ export const TherapyGame = ({ profile, onNavigate }) => {
         </div>
       )}
 
-      {gameState === 'ready' && amputationSide && (
+      {gameState === 'ready' && practiceMode && amputationSide && (
         <div className="glass-panel p-8" style={{ maxWidth: 560, margin: '60px auto', textAlign: 'center' }}>
-          <h2>Ready to Start</h2>
+          <h2>{practiceMode === 'camera' ? 'Ready for Camera Mirror' : 'Ready to Start Game'}</h2>
           <p style={{ marginTop: 10, opacity: 0.75, fontSize: '0.95rem' }}>
             Amputated side: <strong>{amputationSide}</strong>
           </p>
@@ -460,12 +492,19 @@ export const TherapyGame = ({ profile, onNavigate }) => {
             <button
               className="btn btn-secondary"
               style={{ padding: '10px 22px' }}
+              onClick={() => setPracticeMode(null)}
+            >
+              Change Mode
+            </button>
+            <button
+              className="btn btn-secondary"
+              style={{ padding: '10px 22px' }}
               onClick={() => selectSide(null)}
             >
               ← Change Side
             </button>
             <button className="btn btn-primary" style={{ padding: '12px 28px' }} onClick={startSession}>
-              <PlayIcon className="w-5 h-5" /> Start Practice
+              <PlayIcon className="w-5 h-5" /> {practiceMode === 'camera' ? 'Start Camera' : 'Start Game'}
             </button>
           </div>
         </div>
@@ -496,10 +535,10 @@ export const TherapyGame = ({ profile, onNavigate }) => {
             <div className="game-hud-panel">
               <h2 style={{ fontSize: '1.25rem', fontWeight: 800, marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--accent-cyan)' }} />
-                Active Therapy
+                {practiceMode === 'camera' ? 'Camera Mirror' : 'Therapy Game'}
               </h2>
               <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '12px', fontWeight: 600 }}>
-                Session in progress
+                {practiceMode === 'camera' ? 'Free posing session in progress' : 'Target session in progress'}
               </p>
 
               {/* SESSION TIMER CARD */}
@@ -674,14 +713,18 @@ export const TherapyGame = ({ profile, onNavigate }) => {
 
               {/* Game Stats Info card */}
               <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Targets Spawned:</span>
-                  <strong style={{ color: 'var(--text-primary)' }}>{targetsSpawned}</strong>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Targets Hit:</span>
-                  <strong style={{ color: 'var(--accent-cyan)' }}>{targetsHit}</strong>
-                </div>
+                {practiceMode === 'game' && (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>Targets Spawned:</span>
+                      <strong style={{ color: 'var(--text-primary)' }}>{targetsSpawned}</strong>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>Targets Hit:</span>
+                      <strong style={{ color: 'var(--accent-cyan)' }}>{targetsHit}</strong>
+                    </div>
+                  </>
+                )}
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
                   <span style={{ color: 'var(--text-muted)' }}>Range of Motion:</span>
                   <strong style={{ color: 'var(--warning)' }}>{peakROM}&deg;</strong>
@@ -732,7 +775,7 @@ export const TherapyGame = ({ profile, onNavigate }) => {
 
       {gameState === 'finished' && (
         <div className="glass-panel clinical-card session-summary">
-          <span className="clinical-eyebrow">Practice summary</span>
+          <span className="clinical-eyebrow">{practiceMode === 'camera' ? 'Camera summary' : 'Game summary'}</span>
           <h2 style={{ marginTop: 8 }}>Session Complete</h2>
           <p style={{ marginTop: 10, color: 'var(--text-secondary)' }}>
             {sessionSaved === false
@@ -740,14 +783,18 @@ export const TherapyGame = ({ profile, onNavigate }) => {
               : 'This session has been recorded and will appear on the patient and clinician dashboards.'}
           </p>
           <div className="metric-grid" style={{ marginTop: 22, marginBottom: 0 }}>
-            <div className="glass-panel metric-card" style={{ minHeight: 110 }}>
-              <span>Targets Hit</span>
-              <strong>{targetsHit}/{targetsSpawned}</strong>
-            </div>
-            <div className="glass-panel metric-card" style={{ minHeight: 110 }}>
-              <span>Accuracy</span>
-              <strong>{accuracy}%</strong>
-            </div>
+            {practiceMode === 'game' && (
+              <>
+                <div className="glass-panel metric-card" style={{ minHeight: 110 }}>
+                  <span>Targets Hit</span>
+                  <strong>{targetsHit}/{targetsSpawned}</strong>
+                </div>
+                <div className="glass-panel metric-card" style={{ minHeight: 110 }}>
+                  <span>Accuracy</span>
+                  <strong>{accuracy}%</strong>
+                </div>
+              </>
+            )}
             <div className="glass-panel metric-card" style={{ minHeight: 110 }}>
               <span>Peak ROM</span>
               <strong>{peakROM}&deg;</strong>

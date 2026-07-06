@@ -12,6 +12,7 @@ router.post('/', auth, async (req, res) => {
       prescriptionId,
       startTime,
       endTime,
+      sessionType,
       targetsSpawned,
       targetsHit,
       peakRangeOfMotionDegrees,
@@ -43,6 +44,7 @@ router.post('/', auth, async (req, res) => {
     const insertObj = {
       patient_id: patientId,
       prescription_id: prescriptionId || null,
+      session_type: sessionType === 'CAMERA' ? 'CAMERA' : 'GAME',
       // Use raw strings so PostgreSQL receives the Pakistan Standard Time offset from the client.
       start_time: startRaw,
       end_time: endRaw,

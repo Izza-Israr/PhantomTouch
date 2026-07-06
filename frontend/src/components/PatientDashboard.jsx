@@ -109,6 +109,11 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
     }
   };
 
+  const startPracticeMode = (mode) => {
+    sessionStorage.setItem('phantomtouchPracticeMode', mode);
+    onNavigate('game');
+  };
+
   useEffect(() => {
     if (profile?._id) fetchDashboardData();
   }, [fetchDashboardData, profile?._id]);
@@ -217,15 +222,18 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
     const sDate = session.startTime ? formatToPakistanTime(session.startTime, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Jul 6, 2026';
     const sTime = session.startTime ? formatToPakistanTime(session.startTime, { hour: '2-digit', minute: '2-digit', hour12: true }) : '09:14 AM';
     const sDuration = formatDurationMinSec(session.totalDurationSeconds || 0);
-    const sTargets = `${session.targetsHit || 0}/${session.targetsSpawned || 15}`;
-    const sAccuracy = `${session.accuracyPercentage || 0}%`;
+    const isCameraSession = session.sessionType === 'CAMERA';
+    const sType = isCameraSession ? 'Camera' : 'Game';
+    const sTargets = isCameraSession ? '—' : `${session.targetsHit || 0}/${session.targetsSpawned || 15}`;
+    const sAccuracy = isCameraSession ? '—' : `${session.accuracyPercentage || 0}%`;
     const sPain = getPainForIndex(index);
-    const sScore = sessions.length ? Math.min(100, Math.round((session.accuracyPercentage || 80) * 1.02 + 1)) : [94, 91, 87, 96, 83][index % 5];
+    const sScore = isCameraSession ? null : Math.min(100, Math.round((session.accuracyPercentage || 80) * 1.02 + 1));
 
     return (
       <tr key={session._id || session.id || index}>
         <td>{sDate}</td>
         <td style={{ color: 'var(--text-muted)' }}>{sTime}</td>
+        <td>{sType}</td>
         <td>{sDuration}</td>
         <td>{sTargets}</td>
         <td style={{ color: 'var(--accent-cyan)' }}>{sAccuracy}</td>
@@ -233,12 +241,16 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
           <span style={getPainColor(sPain)}>{sPain || 'Not set'}</span>
         </td>
         <td>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{ width: '40px', height: '6px', borderRadius: '3px', background: 'var(--border-color)', overflow: 'hidden' }}>
-              <div style={{ width: `${sScore}%`, height: '100%', backgroundColor: 'var(--accent-cyan)' }} />
+          {sScore === null ? (
+            <span style={{ color: 'var(--text-muted)' }}>—</span>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ width: '40px', height: '6px', borderRadius: '3px', background: 'var(--border-color)', overflow: 'hidden' }}>
+                <div style={{ width: `${sScore}%`, height: '100%', backgroundColor: 'var(--accent-cyan)' }} />
+              </div>
+              <span style={{ fontWeight: '700', fontSize: '0.9rem' }}>{sScore}</span>
             </div>
-            <span style={{ fontWeight: '700', fontSize: '0.9rem' }}>{sScore}</span>
-          </div>
+          )}
         </td>
       </tr>
     );
@@ -303,9 +315,14 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
           <h3>Active Prescription</h3>
           <p>Your current therapy limits and target settings.</p>
         </div>
-        <button className="btn btn-primary prescription-start-btn" onClick={() => onNavigate('game')}>
-          Start Practice
-        </button>
+        <div className="prescription-action-group">
+          <button className="btn btn-secondary prescription-start-btn" onClick={() => startPracticeMode('camera')}>
+            Camera Mirror
+          </button>
+          <button className="btn btn-primary prescription-start-btn" onClick={() => startPracticeMode('game')}>
+            Therapy Game
+          </button>
+        </div>
       </div>
       <div className="prescription-metric-grid">
         <div className="prescription-metric">
@@ -527,6 +544,7 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
                     <tr>
                       <th>DATE</th>
                       <th>TIME</th>
+                      <th>MODE</th>
                       <th>DURATION</th>
                       <th>TARGETS</th>
                       <th>ACCURACY</th>
@@ -537,7 +555,7 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
                   <tbody>
                     {recentSessionRows.length > 0 ? recentSessionRows : (
                       <tr>
-                        <td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '24px' }}>No sessions recorded yet.</td>
+                        <td colSpan={8} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '24px' }}>No sessions recorded yet.</td>
                       </tr>
                     )}
                   </tbody>
@@ -700,6 +718,7 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
                   <tr>
                     <th>DATE</th>
                     <th>TIME</th>
+                    <th>MODE</th>
                     <th>DURATION</th>
                     <th>TARGETS</th>
                     <th>ACCURACY</th>
@@ -710,7 +729,7 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
                 <tbody>
                   {allSessionRows.length > 0 ? allSessionRows : (
                     <tr>
-                      <td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '24px' }}>No sessions recorded yet.</td>
+                      <td colSpan={8} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '24px' }}>No sessions recorded yet.</td>
                     </tr>
                   )}
                 </tbody>
@@ -732,6 +751,7 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
                 <tr>
                   <th>DATE</th>
                   <th>TIME</th>
+                  <th>MODE</th>
                   <th>DURATION</th>
                   <th>TARGETS</th>
                   <th>ACCURACY</th>
@@ -742,7 +762,7 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
               <tbody>
                 {allSessionRows.length > 0 ? allSessionRows : (
                   <tr>
-                    <td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '24px' }}>No sessions recorded yet.</td>
+                    <td colSpan={8} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '24px' }}>No sessions recorded yet.</td>
                   </tr>
                 )}
               </tbody>

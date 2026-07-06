@@ -819,6 +819,7 @@ label {
     padding: 22px;
   }
 
+  .prescription-action-group,
   .prescription-start-btn {
     width: 100%;
   }
@@ -946,6 +947,13 @@ label {
   margin-top: 6px;
   color: var(--text-secondary);
   font-size: 0.92rem;
+}
+
+.prescription-action-group {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .prescription-start-btn {
@@ -1324,6 +1332,54 @@ label {
   width: auto;
   margin: 0;
   accent-color: var(--accent-cyan);
+}
+
+.practice-mode-panel {
+  width: min(760px, calc(100% - 32px));
+  margin: 60px auto;
+  text-align: center;
+}
+
+.practice-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 28px;
+}
+
+.practice-mode-card {
+  min-height: 150px;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 10px;
+  padding: 22px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  text-align: left;
+}
+
+.practice-mode-card:hover {
+  border-color: var(--accent-cyan);
+  background: var(--accent-cyan-dim);
+  transform: translateY(-1px);
+}
+
+.practice-mode-card strong {
+  font-size: 1.1rem;
+}
+
+.practice-mode-card span {
+  color: var(--text-secondary);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+@media (max-width: 640px) {
+  .practice-mode-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .session-table-wrap {
