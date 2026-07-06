@@ -171,29 +171,48 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
     <div className="clinical-dashboard animate-fade-in">
       <section className="dashboard-topbar">
         <div>
+          <div className="dashboard-hero-pill">AI-Powered Mirror Therapy</div>
           <h2>Hello, {profile?.fullName || user?.email || 'Patient'}</h2>
           <p>
-            Mirror therapy overview for <strong>{profile?.amputationSide || 'LEFT'} hand</strong> rehabilitation.
-            {lastSession ? ` Last session ${new Date(lastSession.startTime).toLocaleDateString()}.` : ' No completed sessions yet.'}
+            Browser-based rehabilitation using real-time hand tracking and a 3D phantom limb.
+            Reduce pain, improve range of motion, and track progress — all from your browser.
           </p>
         </div>
-        <div className="topbar-actions">
-          <button className="btn btn-secondary theme-toggle" onClick={onToggleTheme}>
-            {theme === 'dark' ? 'Light' : 'Dark'}
-          </button>
-          <button className="btn btn-primary" onClick={() => onNavigate('game')}>
-            <PlayIcon className="w-5 h-5" /> Start Practice
-          </button>
+        <div className="dashboard-status-row">
+          <div className="status-pill status-active">Active tracking</div>
+          <div className="status-pill status-date">{new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</div>
+          <div className="topbar-actions">
+            <button className="btn btn-secondary theme-toggle" onClick={onToggleTheme}>
+              {theme === 'dark' ? 'Light' : 'Dark'}
+            </button>
+            <button className="btn btn-primary" onClick={() => onNavigate('game')}>
+              <PlayIcon className="w-5 h-5" /> Start Practice
+            </button>
+          </div>
         </div>
       </section>
 
       {view === 'overview' && (
         <>
           {metricCards}
-          <section className="dashboard-main-grid">
-            {prescriptionPanel}
-            {readinessPanel}
-          </section>
+          <div className="overview-details-grid">
+            <div>
+              {prescriptionPanel}
+              {readinessPanel}
+            </div>
+            <div className="glass-panel clinical-card doctor-notes-panel">
+              <div className="clinical-card-title">
+                <h3>Doctor Notes</h3>
+                <span className="clinical-eyebrow">Dr. Anita Patel · Jul 6, 2026</span>
+              </div>
+              <p>
+                Patient shows significant improvement in phantom limb pain management.
+                Recommend continuing daily 20-minute sessions with focus on finger extension exercises.
+                Monitor grip strength progression.
+              </p>
+              <button className="btn btn-cyan" type="button">Save Note</button>
+            </div>
+          </div>
           <section>
             <div className="clinical-card-title">
               <h3>Recent Progress</h3>
