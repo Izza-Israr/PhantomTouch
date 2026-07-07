@@ -224,10 +224,10 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
     const sDuration = formatDurationMinSec(session.totalDurationSeconds || 0);
     const isCameraSession = session.sessionType === 'CAMERA';
     const sType = isCameraSession ? 'Camera' : 'Game';
-    const sTargets = isCameraSession ? '—' : `${session.targetsHit || 0}/${session.targetsSpawned || 15}`;
-    const sAccuracy = isCameraSession ? '—' : `${session.accuracyPercentage || 0}%`;
+    const sTargets = isCameraSession ? '—' : (session.targetsHit != null ? `${session.targetsHit}/${session.targetsSpawned ?? '--'}` : '—');
+    const sAccuracy = isCameraSession ? '—' : (session.accuracyPercentage != null ? `${session.accuracyPercentage}%` : '—');
     const sPain = getPainForIndex(index);
-    const sScore = isCameraSession ? null : Math.min(100, Math.round((session.accuracyPercentage || 80) * 1.02 + 1));
+    const sScore = isCameraSession ? null : (session.accuracyPercentage != null ? Math.min(100, Math.round(session.accuracyPercentage * 1.02 + 1)) : null);
 
     return (
       <tr key={session._id || session.id || index}>
@@ -470,7 +470,11 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
               </div>
               <div className="horizontal-metric-content">
                 <span>Targets Hit</span>
-                <strong className="green-text">{lastSessionObj.targetsHit} / {lastSessionObj.targetsSpawned || 15}</strong>
+                <strong className="green-text">{
+                  typeof lastSessionObj.targetsHit === 'number'
+                    ? `${lastSessionObj.targetsHit} / ${lastSessionObj.targetsSpawned ?? '--'}`
+                    : '—'
+                }</strong>
               </div>
             </div>
 
@@ -482,7 +486,11 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
               </div>
               <div className="horizontal-metric-content">
                 <span>Session Time</span>
-                <strong className="cyan-text">{formatDurationMinSec(lastSessionObj.totalDurationSeconds || 121)}</strong>
+                <strong className="cyan-text">{
+                  typeof lastSessionObj.totalDurationSeconds === 'number' && lastSessionObj.totalDurationSeconds > 0
+                    ? formatDurationMinSec(lastSessionObj.totalDurationSeconds)
+                    : '—'
+                }</strong>
               </div>
             </div>
 
@@ -494,7 +502,11 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
               </div>
               <div className="horizontal-metric-content">
                 <span>Accuracy</span>
-                <strong className="cyan-text">{lastSessionObj.accuracyPercentage || 91}%</strong>
+                <strong className="cyan-text">{
+                  typeof lastSessionObj.accuracyPercentage === 'number'
+                    ? `${lastSessionObj.accuracyPercentage}%`
+                    : '—'
+                }</strong>
               </div>
             </div>
 
@@ -506,7 +518,7 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
               </div>
               <div className="horizontal-metric-content">
                 <span>Hand Stability</span>
-                <strong className="green-text">Good</strong>
+                <strong className="green-text">{lastSessionObj.handStability || lastSessionObj.stabilityGrade || '—'}</strong>
               </div>
             </div>
 
@@ -518,7 +530,11 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
               </div>
               <div className="horizontal-metric-content">
                 <span>Range of Motion</span>
-                <strong className="orange-text">{lastSessionObj.peakRangeOfMotionDegrees || 78}&deg;</strong>
+                <strong className="orange-text">{
+                  typeof lastSessionObj.peakRangeOfMotionDegrees === 'number'
+                    ? `${lastSessionObj.peakRangeOfMotionDegrees}\u00b0`
+                    : '—'
+                }</strong>
               </div>
             </div>
           </section>

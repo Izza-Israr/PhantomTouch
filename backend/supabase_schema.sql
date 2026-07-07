@@ -13,9 +13,14 @@ create table users (
   email text not null unique,
   password_hash text not null,
   role text not null check (role in ('PATIENT', 'CLINICIAN', 'ADMIN')),
+  auth_provider text not null default 'email' check (auth_provider in ('email', 'google')),
   session_token text,
   last_login timestamptz
 );
+
+-- Migration: add auth_provider column if users table already exists
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS auth_provider text not null default 'email';
 
 create table hospitals (
   id uuid primary key default gen_random_uuid(),

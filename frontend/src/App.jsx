@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import axios from 'axios';
 import { LandingScreen } from './components/LandingScreen';
 import { AuthScreen } from './components/AuthScreen';
+import { ProfileSetupScreen } from './components/ProfileSetupScreen';
 import { PatientDashboard } from './components/PatientDashboard';
 import { ClinicianDashboard } from './components/ClinicianDashboard';
 import { TherapyGame } from './components/TherapyGame';
@@ -19,10 +20,11 @@ axios.interceptors.request.use((config) => {
 });
 
 function App() {
-  const [screen, setScreen] = useState('landing'); // landing, login, register, dashboard, game
+  const [screen, setScreen] = useState('landing'); // landing, login, register, dashboard, game, profileSetup
   const [token, setToken] = useState(localStorage.getItem('token') || '');
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
+  const [googleName, setGoogleName] = useState('');
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light');
   const [dashboardView, setDashboardView] = useState('overview');
@@ -71,7 +73,11 @@ function App() {
           setToken(storedToken);
           setUser(res.data.user);
           setProfile(res.data.profile);
-          setScreen('dashboard');
+          if (res.data.needsProfileSetup) {
+            setScreen('profileSetup');
+          } else {
+            setScreen('dashboard');
+          }
         }
       } catch (err) {
         console.warn('Saved token validation failed. Logging out.', err);
@@ -88,6 +94,20 @@ function App() {
     localStorage.setItem('token', newToken);
     setToken(newToken);
     setUser(newUser);
+    setProfile(newProfile);
+    setScreen('dashboard');
+  };
+
+  const handleGoogleNeedsProfile = (newToken, newUser, name) => {
+    localStorage.setItem('token', newToken);
+    setToken(newToken);
+    setUser(newUser);
+    setGoogleName(name || '');
+    setScreen('profileSetup');
+  };
+
+  const handleProfileComplete = (updatedUser, newProfile) => {
+    setUser(updatedUser);
     setProfile(newProfile);
     setScreen('dashboard');
   };
@@ -391,6 +411,16 @@ function App() {
               mode={screen}
               onAuthSuccess={handleAuthSuccess}
               onNavigate={handleNavigate}
+              onGoogleNeedsProfile={handleGoogleNeedsProfile}
+            />
+          )}
+
+          {screen === 'profileSetup' && (
+            <ProfileSetupScreen
+              user={user}
+              googleName={googleName}
+              token={token}
+              onProfileComplete={handleProfileComplete}
             />
           )}
 
