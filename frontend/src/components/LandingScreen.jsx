@@ -37,6 +37,140 @@ export const LandingScreen = ({ onNavigate }) => {
   const stat1 = useCountUp(5, 1800);
   const stat2 = useCountUp(85, 2200);
   const stat3 = useCountUp(0, 1500);
+  // Speech helpers for spoken onboarding
+  const getSpeechRecognition = () => {
+    const w = window;
+    return w.SpeechRecognition || w.webkitSpeechRecognition || null;
+  };
+  const recognitionRef = useRef(null);
+  const lastVoiceCommandRef = useRef('');
+  const isSpeakingRef = useRef(false);
+
+  const handleLandingVoiceCommand = (spokenText, recognition) => {
+    const text = spokenText
+      .toLowerCase()
+      .replace(/[^\w\s]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!text || text === lastVoiceCommandRef.current || isSpeakingRef.current) return;
+    lastVoiceCommandRef.current = text;
+    console.log('Landing voice input:', text);
+
+    if (
+      text.includes('sign in') ||
+      text.includes('login') ||
+      text.includes('log in') ||
+      text.includes('start therapy') ||
+      text.includes('therapy session')
+    ) {
+      localStorage.setItem('voiceMode', 'true');
+      recognitionRef.current = null;
+      try { recognition.stop(); } catch (e) { console.warn('Could not stop landing recognition', e); }
+      window.speechSynthesis?.cancel?.();
+      onNavigate('login');
+      return;
+    }
+
+    if (
+      text.includes('sign up') ||
+      text.includes('register') ||
+      text.includes('create account') ||
+      text.includes('create free account') ||
+      text.includes('clinician')
+    ) {
+      localStorage.setItem('voiceMode', 'true');
+      recognitionRef.current = null;
+      try { recognition.stop(); } catch (e) { console.warn('Could not stop landing recognition', e); }
+      window.speechSynthesis?.cancel?.();
+      onNavigate('register');
+      return;
+    }
+
+    if (text.includes('go back')) {
+      speak('You are already on the start screen. Say login or register.');
+      return;
+    }
+
+    speak('I heard you. Please say login, register, start therapy session, or sign up as clinician.');
+  };
+
+  const speak = (text, onDone) => {
+    try {
+      const ut = new SpeechSynthesisUtterance(text);
+      ut.lang = 'en-US';
+      ut.onend = () => {
+        isSpeakingRef.current = false;
+        onDone?.();
+      };
+      ut.onerror = () => {
+        isSpeakingRef.current = false;
+        onDone?.();
+      };
+      window.speechSynthesis.cancel();
+      isSpeakingRef.current = true;
+      window.speechSynthesis.speak(ut);
+      setTimeout(() => { isSpeakingRef.current = false; }, Math.max(2500, text.length * 85));
+    } catch (e) {
+      isSpeakingRef.current = false;
+      console.warn('SpeechSynthesis not available', e);
+      onDone?.();
+    }
+  };
+
+  useEffect(() => {
+    // Start the spoken prompt when landing loads
+    const SR = getSpeechRecognition();
+    if (!SR || !onNavigate) return;
+
+    let recognition = null;
+    try {
+      recognition = new SR();
+      recognition.lang = 'en-US';
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
+    } catch (e) {
+      return;
+    }
+
+    recognition.onresult = (evt) => {
+      const result = evt.results[evt.results.length - 1];
+      const t = result?.[0]?.transcript || '';
+      handleLandingVoiceCommand(t, recognition);
+    };
+
+    recognition.onerror = (e) => console.warn('Landing recognition error', e);
+    recognition.onend = () => {
+      if (recognitionRef.current) {
+        try { recognition.start(); } catch (e) { console.warn('Could not restart landing recognition', e); }
+      }
+    };
+
+    recognitionRef.current = recognition;
+
+    // start spoken prompt
+    localStorage.setItem('voiceMode', 'true');
+    let hasStarted = false;
+    const startRecognition = () => {
+      if (hasStarted || recognitionRef.current !== recognition) return;
+      hasStarted = true;
+      try {
+        recognition.start();
+      } catch (e) {
+        console.warn('Could not start recognition on landing', e);
+      }
+    };
+    speak('Voice recognition mode is active. Say login if you already have an account, or say register if you are new.', startRecognition);
+    const fallbackStart = setTimeout(startRecognition, 3500);
+
+    // cleanup
+    return () => {
+      clearTimeout(fallbackStart);
+      try { recognition.stop(); } catch (e) { }
+      recognitionRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onNavigate]);
 
   return (
     <div className="animate-fade-in landing-hero-bg" style={{ padding: '40px 20px', maxWidth: '1200px', margin: '0 auto', textAlign: 'left' }}>
