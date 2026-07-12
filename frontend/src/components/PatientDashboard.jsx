@@ -56,7 +56,12 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
     fullName: profile?.fullName || '',
     amputationSide: profile?.amputationSide || 'LEFT',
     amputationLevel: profile?.amputationLevel || 'TRANSRADIAL',
-    missingFingers: profile?.missingFingers || []
+    missingFingers: profile?.missingFingers || [],
+    leftAmputationLevel: profile?.leftAmputationLevel || 'TRANSRADIAL',
+    rightAmputationLevel: profile?.rightAmputationLevel || 'TRANSRADIAL',
+    leftMissingFingers: profile?.leftMissingFingers || [],
+    rightMissingFingers: profile?.rightMissingFingers || [],
+    voiceModePreferred: Boolean(profile?.voiceModePreferred || profile?.amputationSide === 'BILATERAL')
   });
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
@@ -123,7 +128,12 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
       fullName: profile?.fullName || '',
       amputationSide: profile?.amputationSide || 'LEFT',
       amputationLevel: profile?.amputationLevel || 'TRANSRADIAL',
-      missingFingers: profile?.missingFingers || []
+      missingFingers: profile?.missingFingers || [],
+      leftAmputationLevel: profile?.leftAmputationLevel || 'TRANSRADIAL',
+      rightAmputationLevel: profile?.rightAmputationLevel || 'TRANSRADIAL',
+      leftMissingFingers: profile?.leftMissingFingers || [],
+      rightMissingFingers: profile?.rightMissingFingers || [],
+      voiceModePreferred: Boolean(profile?.voiceModePreferred || profile?.amputationSide === 'BILATERAL')
     });
   }, [profile]);
 
@@ -134,7 +144,13 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
     try {
       const payload = {
         ...profileForm,
-        missingFingers: profileForm.amputationLevel === 'FINGER_AMPUTATION' ? profileForm.missingFingers : []
+        amputationLevel: profileForm.amputationSide === 'BILATERAL' ? profileForm.leftAmputationLevel : profileForm.amputationLevel,
+        missingFingers: profileForm.amputationSide === 'BILATERAL'
+          ? []
+          : profileForm.amputationLevel === 'FINGER_AMPUTATION' ? profileForm.missingFingers : [],
+        leftMissingFingers: profileForm.leftAmputationLevel === 'FINGER_AMPUTATION' ? profileForm.leftMissingFingers : [],
+        rightMissingFingers: profileForm.rightAmputationLevel === 'FINGER_AMPUTATION' ? profileForm.rightMissingFingers : [],
+        voiceModePreferred: profileForm.voiceModePreferred || profileForm.amputationSide === 'BILATERAL'
       };
       const res = await axios.put(`http://localhost:5000/api/patients/${profile._id}`, payload, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
@@ -217,6 +233,25 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
   };
 
   const displaySessions = sessions;
+  const renderFingerSelector = (field) => (
+    <div className="finger-checkbox-grid">
+      {FINGER_OPTIONS.map((finger) => (
+        <label key={finger} className="finger-checkbox">
+          <input
+            type="checkbox"
+            checked={(profileForm[field] || []).includes(finger)}
+            onChange={(e) => setProfileForm((prev) => ({
+              ...prev,
+              [field]: e.target.checked
+                ? Array.from(new Set([...(prev[field] || []), finger]))
+                : (prev[field] || []).filter((item) => item !== finger)
+            }))}
+          />
+          <span>{finger.charAt(0) + finger.slice(1).toLowerCase()}</span>
+        </label>
+      ))}
+    </div>
+  );
 
   const renderSessionRows = (rows) => rows.map((session, index) => {
     const sDate = session.startTime ? formatToPakistanTime(session.startTime, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Jul 6, 2026';
@@ -644,37 +679,59 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
               <select id="profile-side" value={profileForm.amputationSide} onChange={e => setProfileForm(prev => ({ ...prev, amputationSide: e.target.value }))}>
                 <option value="LEFT">Left Side</option>
                 <option value="RIGHT">Right Side</option>
+                <option value="BILATERAL">Bilateral</option>
               </select>
             </div>
             <div style={{ gridColumn: '1 / -1' }}>
               <label htmlFor="profile-level">Amputation Level</label>
-              <select id="profile-level" value={profileForm.amputationLevel} onChange={e => setProfileForm(prev => ({ ...prev, amputationLevel: e.target.value }))}>
+              <select id="profile-level" value={profileForm.amputationLevel} onChange={e => setProfileForm(prev => ({ ...prev, amputationLevel: e.target.value }))} disabled={profileForm.amputationSide === 'BILATERAL'}>
                 <option value="TRANSRADIAL">Transradial</option>
                 <option value="TRANSHUMERAL">Transhumeral</option>
                 <option value="WRIST_DISARTICULATION">Wrist Disarticulation</option>
                 <option value="FINGER_AMPUTATION">Fingers Only</option>
               </select>
             </div>
-            {profileForm.amputationLevel === 'FINGER_AMPUTATION' && (
+            {profileForm.amputationSide === 'BILATERAL' && (
+              <div style={{ gridColumn: '1 / -1', border: '1px solid var(--border-color)', borderRadius: 14, padding: 16, background: 'var(--bg-primary)' }}>
+                <h4 style={{ marginBottom: 12 }}>Bilateral Settings</h4>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div>
+                    <label htmlFor="profile-left-level">Left Side Level</label>
+                    <select id="profile-left-level" value={profileForm.leftAmputationLevel} onChange={e => setProfileForm(prev => ({ ...prev, leftAmputationLevel: e.target.value }))}>
+                      <option value="TRANSRADIAL">Transradial</option>
+                      <option value="TRANSHUMERAL">Transhumeral</option>
+                      <option value="WRIST_DISARTICULATION">Wrist Disarticulation</option>
+                      <option value="FINGER_AMPUTATION">Fingers Only</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="profile-right-level">Right Side Level</label>
+                    <select id="profile-right-level" value={profileForm.rightAmputationLevel} onChange={e => setProfileForm(prev => ({ ...prev, rightAmputationLevel: e.target.value }))}>
+                      <option value="TRANSRADIAL">Transradial</option>
+                      <option value="TRANSHUMERAL">Transhumeral</option>
+                      <option value="WRIST_DISARTICULATION">Wrist Disarticulation</option>
+                      <option value="FINGER_AMPUTATION">Fingers Only</option>
+                    </select>
+                  </div>
+                </div>
+                {profileForm.leftAmputationLevel === 'FINGER_AMPUTATION' && (
+                  <div style={{ marginTop: 14 }}>
+                    <label>Left Missing Fingers</label>
+                    {renderFingerSelector('leftMissingFingers')}
+                  </div>
+                )}
+                {profileForm.rightAmputationLevel === 'FINGER_AMPUTATION' && (
+                  <div style={{ marginTop: 14 }}>
+                    <label>Right Missing Fingers</label>
+                    {renderFingerSelector('rightMissingFingers')}
+                  </div>
+                )}
+              </div>
+            )}
+            {profileForm.amputationSide !== 'BILATERAL' && profileForm.amputationLevel === 'FINGER_AMPUTATION' && (
               <div style={{ gridColumn: '1 / -1' }}>
                 <label>Missing Fingers</label>
-                <div className="finger-checkbox-grid">
-                  {FINGER_OPTIONS.map((finger) => (
-                    <label key={finger} className="finger-checkbox">
-                      <input
-                        type="checkbox"
-                        checked={profileForm.missingFingers.includes(finger)}
-                        onChange={(e) => setProfileForm((prev) => ({
-                          ...prev,
-                          missingFingers: e.target.checked
-                            ? Array.from(new Set([...prev.missingFingers, finger]))
-                            : prev.missingFingers.filter((item) => item !== finger)
-                        }))}
-                      />
-                      <span>{finger.charAt(0) + finger.slice(1).toLowerCase()}</span>
-                    </label>
-                  ))}
-                </div>
+                {renderFingerSelector('missingFingers')}
               </div>
             )}
             <div className="profile-actions" style={{ marginTop: '10px' }}>

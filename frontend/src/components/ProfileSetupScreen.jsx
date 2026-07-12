@@ -15,6 +15,10 @@ export const ProfileSetupScreen = ({ user, googleName, token, onProfileComplete 
   const [amputationSide, setAmputationSide] = useState('LEFT');
   const [amputationLevel, setAmputationLevel] = useState('TRANSRADIAL');
   const [missingFingers, setMissingFingers] = useState(['INDEX']);
+  const [leftAmputationLevel, setLeftAmputationLevel] = useState('TRANSRADIAL');
+  const [rightAmputationLevel, setRightAmputationLevel] = useState('TRANSRADIAL');
+  const [leftMissingFingers, setLeftMissingFingers] = useState([]);
+  const [rightMissingFingers, setRightMissingFingers] = useState([]);
   const [dob, setDob] = useState('');
 
   const [loading, setLoading] = useState(false);
@@ -63,6 +67,8 @@ export const ProfileSetupScreen = ({ user, googleName, token, onProfileComplete 
       clinicianSpecialty: 'Please say your medical specialty, or say skip.',
       patientSide: 'Which side is affected? Say left, right, or bilateral.',
       patientLevel: 'What is the amputation level? Say below elbow, above elbow, wrist, or fingers only.',
+      bilateralLeftLevel: 'For the left side, what is the amputation level? Say below elbow, above elbow, wrist, or fingers only.',
+      bilateralRightLevel: 'For the right side, what is the amputation level? Say below elbow, above elbow, wrist, or fingers only.',
       patientDob: 'Please say your date of birth, or say skip.',
       patientFingers: 'Which fingers are missing? Say thumb, index, middle, ring, or pinky. Say done when finished.',
       ready: 'Profile details are ready. Say submit to continue, delete to clear the current field, or go back.',
@@ -79,10 +85,14 @@ export const ProfileSetupScreen = ({ user, googleName, token, onProfileComplete 
       amputationSide,
       amputationLevel,
       missingFingers,
+      leftAmputationLevel,
+      rightAmputationLevel,
+      leftMissingFingers,
+      rightMissingFingers,
       dob,
       voiceStep,
     };
-  }, [role, fullName, licenseNumber, medicalSpecialty, amputationSide, amputationLevel, missingFingers, dob, voiceStep]);
+  }, [role, fullName, licenseNumber, medicalSpecialty, amputationSide, amputationLevel, missingFingers, leftAmputationLevel, rightAmputationLevel, leftMissingFingers, rightMissingFingers, dob, voiceStep]);
 
   useEffect(() => {
     const SR = getSpeechRecognition();
@@ -143,8 +153,15 @@ export const ProfileSetupScreen = ({ user, googleName, token, onProfileComplete 
         payload.medicalSpecialty = medicalSpecialty;
       } else if (role === 'PATIENT') {
         payload.amputationSide = amputationSide;
-        payload.amputationLevel = amputationLevel;
-        payload.missingFingers = amputationLevel === 'FINGER_AMPUTATION' ? missingFingers : [];
+        payload.amputationLevel = amputationSide === 'BILATERAL' ? leftAmputationLevel : amputationLevel;
+        payload.missingFingers = amputationSide === 'BILATERAL'
+          ? []
+          : amputationLevel === 'FINGER_AMPUTATION' ? missingFingers : [];
+        payload.leftAmputationLevel = amputationSide === 'BILATERAL' ? leftAmputationLevel : null;
+        payload.rightAmputationLevel = amputationSide === 'BILATERAL' ? rightAmputationLevel : null;
+        payload.leftMissingFingers = amputationSide === 'BILATERAL' && leftAmputationLevel === 'FINGER_AMPUTATION' ? leftMissingFingers : [];
+        payload.rightMissingFingers = amputationSide === 'BILATERAL' && rightAmputationLevel === 'FINGER_AMPUTATION' ? rightMissingFingers : [];
+        payload.voiceModePreferred = amputationSide === 'BILATERAL';
         if (dob) payload.dateOfBirth = dob;
       }
 
@@ -175,7 +192,9 @@ export const ProfileSetupScreen = ({ user, googleName, token, onProfileComplete 
         'role',
         ...(snapshot.role === 'CLINICIAN'
           ? ['clinicianLicense', 'clinicianSpecialty']
-          : ['patientSide', 'patientLevel', 'patientDob', ...(snapshot.amputationLevel === 'FINGER_AMPUTATION' ? ['patientFingers'] : [])]),
+          : ['patientSide', ...(snapshot.amputationSide === 'BILATERAL'
+            ? ['bilateralLeftLevel', 'bilateralRightLevel']
+            : ['patientLevel']), 'patientDob', ...(snapshot.amputationLevel === 'FINGER_AMPUTATION' ? ['patientFingers'] : [])]),
         'ready',
       ];
       const index = flow.indexOf(snapshot.voiceStep);
@@ -223,15 +242,30 @@ export const ProfileSetupScreen = ({ user, googleName, token, onProfileComplete 
       if (lower.includes('right')) setAmputationSide('RIGHT');
       else if (lower.includes('bilateral') || lower.includes('both')) setAmputationSide('BILATERAL');
       else setAmputationSide('LEFT');
-      promptForStep('patientLevel');
+      promptForStep((lower.includes('bilateral') || lower.includes('both')) ? 'bilateralLeftLevel' : 'patientLevel');
       return;
     }
+    const parseLevel = () => {
+      if (lower.includes('above')) return 'TRANSHUMERAL';
+      if (lower.includes('wrist')) return 'WRIST_DISARTICULATION';
+      if (lower.includes('finger')) return 'FINGER_AMPUTATION';
+      return 'TRANSRADIAL';
+    };
     if (snapshot.voiceStep === 'patientLevel') {
-      let nextLevel = 'TRANSRADIAL';
-      if (lower.includes('above')) nextLevel = 'TRANSHUMERAL';
-      else if (lower.includes('wrist')) nextLevel = 'WRIST_DISARTICULATION';
-      else if (lower.includes('finger')) nextLevel = 'FINGER_AMPUTATION';
+      const nextLevel = parseLevel();
       setAmputationLevel(nextLevel);
+      promptForStep('patientDob');
+      return;
+    }
+    if (snapshot.voiceStep === 'bilateralLeftLevel') {
+      const nextLevel = parseLevel();
+      setLeftAmputationLevel(nextLevel);
+      setAmputationLevel(nextLevel);
+      promptForStep('bilateralRightLevel');
+      return;
+    }
+    if (snapshot.voiceStep === 'bilateralRightLevel') {
+      setRightAmputationLevel(parseLevel());
       promptForStep('patientDob');
       return;
     }
@@ -265,6 +299,25 @@ export const ProfileSetupScreen = ({ user, googleName, token, onProfileComplete 
   useEffect(() => {
     processVoiceCommandRef.current = processVoiceCommand;
   }, [processVoiceCommand]);
+
+  const renderFingerOptions = (selected, setSelected) => (
+    <div className="finger-checkbox-grid">
+      {FINGER_OPTIONS.map((finger) => (
+        <label key={finger} className="finger-checkbox">
+          <input
+            type="checkbox"
+            checked={selected.includes(finger)}
+            onChange={(e) => {
+              setSelected((prev) => e.target.checked
+                ? Array.from(new Set([...prev, finger]))
+                : prev.filter((item) => item !== finger));
+            }}
+          />
+          <span>{finger.charAt(0) + finger.slice(1).toLowerCase()}</span>
+        </label>
+      ))}
+    </div>
+  );
 
   const initials = (fullName || user?.email || 'U')
     .split(' ')
@@ -381,7 +434,7 @@ export const ProfileSetupScreen = ({ user, googleName, token, onProfileComplete 
                 </div>
                 <div>
                   <label htmlFor="setup-level">Amputation Level</label>
-                  <select id="setup-level" value={amputationLevel} onChange={e => setAmputationLevel(e.target.value)}>
+                  <select id="setup-level" value={amputationLevel} onChange={e => setAmputationLevel(e.target.value)} disabled={amputationSide === 'BILATERAL'}>
                     <option value="TRANSRADIAL">Transradial (Below Elbow)</option>
                     <option value="TRANSHUMERAL">Transhumeral (Above Elbow)</option>
                     <option value="WRIST_DISARTICULATION">Wrist Disarticulation</option>
@@ -389,6 +442,46 @@ export const ProfileSetupScreen = ({ user, googleName, token, onProfileComplete 
                   </select>
                 </div>
               </div>
+              {amputationSide === 'BILATERAL' && (
+                <div style={{ border: '1px solid var(--border-color)', borderRadius: 14, padding: 16, background: 'var(--bg-primary)' }}>
+                  <h3 style={{ fontSize: '1rem', marginBottom: 8 }}>Bilateral Amputation Details</h3>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.86rem', marginBottom: 14 }}>
+                    Voice mode will stay enabled by default for bilateral access.
+                  </p>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <div>
+                      <label htmlFor="setup-left-level">Left Side Level</label>
+                      <select id="setup-left-level" value={leftAmputationLevel} onChange={e => setLeftAmputationLevel(e.target.value)}>
+                        <option value="TRANSRADIAL">Transradial (Below Elbow)</option>
+                        <option value="TRANSHUMERAL">Transhumeral (Above Elbow)</option>
+                        <option value="WRIST_DISARTICULATION">Wrist Disarticulation</option>
+                        <option value="FINGER_AMPUTATION">Fingers Only</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label htmlFor="setup-right-level">Right Side Level</label>
+                      <select id="setup-right-level" value={rightAmputationLevel} onChange={e => setRightAmputationLevel(e.target.value)}>
+                        <option value="TRANSRADIAL">Transradial (Below Elbow)</option>
+                        <option value="TRANSHUMERAL">Transhumeral (Above Elbow)</option>
+                        <option value="WRIST_DISARTICULATION">Wrist Disarticulation</option>
+                        <option value="FINGER_AMPUTATION">Fingers Only</option>
+                      </select>
+                    </div>
+                  </div>
+                  {leftAmputationLevel === 'FINGER_AMPUTATION' && (
+                    <div style={{ marginTop: 14 }}>
+                      <label>Left Missing Fingers</label>
+                      {renderFingerOptions(leftMissingFingers, setLeftMissingFingers)}
+                    </div>
+                  )}
+                  {rightAmputationLevel === 'FINGER_AMPUTATION' && (
+                    <div style={{ marginTop: 14 }}>
+                      <label>Right Missing Fingers</label>
+                      {renderFingerOptions(rightMissingFingers, setRightMissingFingers)}
+                    </div>
+                  )}
+                </div>
+              )}
               <div>
                 <label htmlFor="setup-dob">Date of Birth</label>
                 <input
@@ -398,25 +491,10 @@ export const ProfileSetupScreen = ({ user, googleName, token, onProfileComplete 
                   onChange={e => setDob(e.target.value)}
                 />
               </div>
-              {amputationLevel === 'FINGER_AMPUTATION' && (
+              {amputationSide !== 'BILATERAL' && amputationLevel === 'FINGER_AMPUTATION' && (
                 <div>
                   <label>Missing Fingers</label>
-                  <div className="finger-checkbox-grid">
-                    {FINGER_OPTIONS.map((finger) => (
-                      <label key={finger} className="finger-checkbox">
-                        <input
-                          type="checkbox"
-                          checked={missingFingers.includes(finger)}
-                          onChange={(e) => {
-                            setMissingFingers((prev) => e.target.checked
-                              ? Array.from(new Set([...prev, finger]))
-                              : prev.filter((item) => item !== finger));
-                          }}
-                        />
-                        <span>{finger.charAt(0) + finger.slice(1).toLowerCase()}</span>
-                      </label>
-                    ))}
-                  </div>
+                  {renderFingerOptions(missingFingers, setMissingFingers)}
                 </div>
               )}
             </>

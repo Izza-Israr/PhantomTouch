@@ -8,6 +8,13 @@ const VALID_FINGERS = new Set(['THUMB', 'INDEX', 'MIDDLE', 'RING', 'PINKY']);
 const normalizeMissingFingers = (value) => Array.isArray(value)
   ? value.map((finger) => String(finger).toUpperCase()).filter((finger) => VALID_FINGERS.has(finger))
   : [];
+const getBilateralPatientFields = (body) => ({
+  left_amputation_level: body.leftAmputationLevel || null,
+  right_amputation_level: body.rightAmputationLevel || null,
+  left_missing_fingers: normalizeMissingFingers(body.leftMissingFingers),
+  right_missing_fingers: normalizeMissingFingers(body.rightMissingFingers),
+  voice_mode_preferred: Boolean(body.voiceModePreferred || body.amputationSide === 'BILATERAL')
+});
 
 // Get all patients assigned to a clinician (or the current patient if patient role)
 router.get('/', auth, async (req, res) => {
@@ -115,6 +122,7 @@ router.post('/', auth, async (req, res) => {
         amputation_side: amputationSide,
         amputation_level: amputationLevel,
         missing_fingers: normalizeMissingFingers(missingFingers),
+        ...getBilateralPatientFields(req.body),
         skin_tone_slider_hex: skinToneSliderHex || '#aa3bff',
         mesh_scale_multiplier: meshScaleMultiplier || 1.0
       }])
@@ -182,13 +190,31 @@ router.put('/:id', auth, async (req, res) => {
       return res.status(403).json({ message: 'Access denied to this profile' });
     }
 
-    const { fullName, amputationSide, amputationLevel, missingFingers, skinToneSliderHex, meshScaleMultiplier, assignedClinicianId } = req.body;
+    const {
+      fullName,
+      amputationSide,
+      amputationLevel,
+      missingFingers,
+      leftAmputationLevel,
+      rightAmputationLevel,
+      leftMissingFingers,
+      rightMissingFingers,
+      voiceModePreferred,
+      skinToneSliderHex,
+      meshScaleMultiplier,
+      assignedClinicianId
+    } = req.body;
     const updates = {};
 
     if (fullName) updates.full_name = fullName;
     if (amputationSide) updates.amputation_side = amputationSide;
     if (amputationLevel) updates.amputation_level = amputationLevel;
     if (missingFingers !== undefined) updates.missing_fingers = normalizeMissingFingers(missingFingers);
+    if (leftAmputationLevel !== undefined) updates.left_amputation_level = leftAmputationLevel || null;
+    if (rightAmputationLevel !== undefined) updates.right_amputation_level = rightAmputationLevel || null;
+    if (leftMissingFingers !== undefined) updates.left_missing_fingers = normalizeMissingFingers(leftMissingFingers);
+    if (rightMissingFingers !== undefined) updates.right_missing_fingers = normalizeMissingFingers(rightMissingFingers);
+    if (voiceModePreferred !== undefined) updates.voice_mode_preferred = Boolean(voiceModePreferred);
     if (skinToneSliderHex) updates.skin_tone_slider_hex = skinToneSliderHex;
     if (meshScaleMultiplier !== undefined) updates.mesh_scale_multiplier = Number(meshScaleMultiplier);
     if (assignedClinicianId && req.user.role === 'ADMIN') updates.assigned_clinician_id = assignedClinicianId;

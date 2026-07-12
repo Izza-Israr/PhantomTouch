@@ -57,6 +57,13 @@ create table patients (
 ALTER TABLE patients
   ADD COLUMN IF NOT EXISTS missing_fingers text[] not null default '{}';
 
+ALTER TABLE patients
+  ADD COLUMN IF NOT EXISTS left_amputation_level text,
+  ADD COLUMN IF NOT EXISTS right_amputation_level text,
+  ADD COLUMN IF NOT EXISTS left_missing_fingers text[] not null default '{}',
+  ADD COLUMN IF NOT EXISTS right_missing_fingers text[] not null default '{}',
+  ADD COLUMN IF NOT EXISTS voice_mode_preferred boolean not null default false;
+
 create table clinical_prescriptions (
   id uuid primary key default gen_random_uuid(),
   patient_id uuid not null references patients(id) on delete cascade,

@@ -9,6 +9,22 @@ const VALID_FINGERS = new Set(['THUMB', 'INDEX', 'MIDDLE', 'RING', 'PINKY']);
 const normalizeMissingFingers = (value) => Array.isArray(value)
   ? value.map((finger) => String(finger).toUpperCase()).filter((finger) => VALID_FINGERS.has(finger))
   : [];
+const getPatientProfilePayload = (userId, fullName, extraFields, base = {}) => ({
+  ...base,
+  user_id: userId,
+  full_name: fullName,
+  date_of_birth: extraFields.dateOfBirth ? new Date(extraFields.dateOfBirth).toISOString() : null,
+  amputation_side: extraFields.amputationSide,
+  amputation_level: extraFields.amputationLevel,
+  missing_fingers: normalizeMissingFingers(extraFields.missingFingers),
+  left_amputation_level: extraFields.leftAmputationLevel || null,
+  right_amputation_level: extraFields.rightAmputationLevel || null,
+  left_missing_fingers: normalizeMissingFingers(extraFields.leftMissingFingers),
+  right_missing_fingers: normalizeMissingFingers(extraFields.rightMissingFingers),
+  voice_mode_preferred: Boolean(extraFields.voiceModePreferred || extraFields.amputationSide === 'BILATERAL'),
+  skin_tone_slider_hex: extraFields.skinToneSliderHex || '#aa3bff',
+  mesh_scale_multiplier: extraFields.meshScaleMultiplier || 1.0
+});
 
 const googleClientId = process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID;
 const googleClient = new OAuth2Client(googleClientId);
@@ -90,18 +106,10 @@ router.post('/register', async (req, res) => {
       }
       const { data: patient, error: patientError } = await supabase
         .from('patients')
-        .insert([{
-          user_id: normalizedUser.id,
+        .insert([getPatientProfilePayload(normalizedUser.id, fullName, extraFields, {
           hospital_id: extraFields.hospitalId || null,
           assigned_clinician_id: extraFields.assignedClinicianId || null,
-          full_name: fullName,
-          date_of_birth: extraFields.dateOfBirth ? new Date(extraFields.dateOfBirth).toISOString() : null,
-          amputation_side: extraFields.amputationSide,
-          amputation_level: extraFields.amputationLevel,
-          missing_fingers: normalizeMissingFingers(extraFields.missingFingers),
-          skin_tone_slider_hex: extraFields.skinToneSliderHex || '#aa3bff',
-          mesh_scale_multiplier: extraFields.meshScaleMultiplier || 1.0
-        }])
+        })])
         .select('*')
         .single();
 
@@ -424,16 +432,7 @@ router.post('/complete-profile', auth, async (req, res) => {
       }
       const { data: patient, error: patientError } = await supabase
         .from('patients')
-        .insert([{
-          user_id: user.id,
-          full_name: fullName,
-          date_of_birth: extraFields.dateOfBirth ? new Date(extraFields.dateOfBirth).toISOString() : null,
-          amputation_side: extraFields.amputationSide,
-          amputation_level: extraFields.amputationLevel,
-          missing_fingers: normalizeMissingFingers(extraFields.missingFingers),
-          skin_tone_slider_hex: extraFields.skinToneSliderHex || '#aa3bff',
-          mesh_scale_multiplier: extraFields.meshScaleMultiplier || 1.0
-        }])
+        .insert([getPatientProfilePayload(user.id, fullName, extraFields)])
         .select('*')
         .single();
 

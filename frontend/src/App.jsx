@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { LandingScreen } from './components/LandingScreen';
 import { AuthScreen } from './components/AuthScreen';
@@ -6,7 +6,6 @@ import { ProfileSetupScreen } from './components/ProfileSetupScreen';
 import { PatientDashboard } from './components/PatientDashboard';
 import { ClinicianDashboard } from './components/ClinicianDashboard';
 import { TherapyGame } from './components/TherapyGame';
-import { AnalyticsIcon, DashboardIcon, LogOutIcon, ProfileIcon, SessionIcon, ThemeIcon } from './components/Icons';
 
 // Add this right below your import statements to clean up your network calls
 axios.interceptors.request.use((config) => {
@@ -30,6 +29,12 @@ function App() {
   const [dashboardView, setDashboardView] = useState('overview');
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [appVoiceEnabled, setAppVoiceEnabled] = useState(Boolean(localStorage.getItem('token')) || localStorage.getItem('voiceMode') === 'true');
+  const appVoiceRecognitionRef = useRef(null);
+  const appVoiceSpeakingRef = useRef(false);
+  const appVoiceLastCommandRef = useRef('');
+  const appVoiceLastCommandAtRef = useRef(0);
+  const appVoiceWelcomeSpokenRef = useRef(false);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -92,9 +97,12 @@ function App() {
 
   const handleAuthSuccess = (newToken, newUser, newProfile) => {
     localStorage.setItem('token', newToken);
+    localStorage.setItem('voiceMode', 'true');
     setToken(newToken);
     setUser(newUser);
     setProfile(newProfile);
+    setAppVoiceEnabled(true);
+    appVoiceWelcomeSpokenRef.current = false;
     setScreen('dashboard');
   };
 
@@ -109,6 +117,9 @@ function App() {
   const handleProfileComplete = (updatedUser, newProfile) => {
     setUser(updatedUser);
     setProfile(newProfile);
+    localStorage.setItem('voiceMode', 'true');
+    setAppVoiceEnabled(true);
+    appVoiceWelcomeSpokenRef.current = false;
     setScreen('dashboard');
   };
 
@@ -142,7 +153,7 @@ function App() {
     setProfile(updatedProfile);
   };
 
-  const handleNavigate = (targetScreen) => {
+  const handleNavigate = useCallback((targetScreen) => {
     // If not authenticated, restrict dashboard and game screens
     if (!token && (targetScreen === 'dashboard' || targetScreen === 'game')) {
       setScreen('landing');
@@ -150,7 +161,176 @@ function App() {
     }
     setScreen(targetScreen);
     if (targetScreen === 'dashboard') setDashboardView('overview');
-  };
+  }, [token]);
+
+  const speakApp = useCallback((text) => {
+    try {
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'en-US';
+      utterance.onend = () => { appVoiceSpeakingRef.current = false; };
+      utterance.onerror = () => { appVoiceSpeakingRef.current = false; };
+      window.speechSynthesis.cancel();
+      appVoiceSpeakingRef.current = true;
+      window.speechSynthesis.speak(utterance);
+      setTimeout(() => { appVoiceSpeakingRef.current = false; }, Math.max(2500, text.length * 80));
+    } catch (e) {
+      appVoiceSpeakingRef.current = false;
+      console.warn('App voice prompt failed:', e);
+    }
+  }, []);
+
+  const explainAppVoiceScript = useCallback(() => {
+    speakApp(
+      'Voice mode is active. Say dashboard, scroll down, scroll up, therapy session, therapy game, or camera mirror. During therapy say start therapy, raise hands, lower hands, pain level is followed by a number, pause, resume, end session, end game, or reach target.'
+    );
+  }, [speakApp]);
+
+  const processAppVoiceCommand = useCallback((spokenText) => {
+    const text = spokenText.toLowerCase().replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    const now = Date.now();
+    if (!text || (text === appVoiceLastCommandRef.current && now - appVoiceLastCommandAtRef.current < 1200)) return;
+    appVoiceLastCommandRef.current = text;
+    appVoiceLastCommandAtRef.current = now;
+
+    window.dispatchEvent(new CustomEvent('phantomtouch:voice-command', { detail: { text } }));
+
+    if (text.includes('turn off voice') || text.includes('stop voice mode')) {
+      setAppVoiceEnabled(false);
+      localStorage.setItem('voiceMode', 'false');
+      speakApp('Voice mode turned off.');
+      return;
+    }
+    if (text.includes('help') || text.includes('what can i say')) {
+      explainAppVoiceScript();
+      return;
+    }
+    if (text.includes('scroll down') || text.includes('page down')) {
+      window.scrollBy({ top: Math.max(360, Math.round(window.innerHeight * 0.75)), behavior: 'smooth' });
+      return;
+    }
+    if (text.includes('scroll up') || text.includes('page up')) {
+      window.scrollBy({ top: -Math.max(360, Math.round(window.innerHeight * 0.75)), behavior: 'smooth' });
+      return;
+    }
+    if (text.includes('therapy game') || text.includes('game mode')) {
+      sessionStorage.setItem('phantomtouchPracticeMode', 'game');
+      handleNavigate('game');
+      speakApp('Opening therapy game. Say start therapy when ready.');
+      return;
+    }
+    if (text.includes('start therapy') && screen === 'game') {
+      return;
+    }
+    if (text.includes('camera mirror') || text.includes('camera mode') || text.includes('therapy session') || text.includes('start therapy')) {
+      sessionStorage.setItem('phantomtouchPracticeMode', 'camera');
+      handleNavigate('game');
+      speakApp('Opening camera mirror. Say start therapy when ready.');
+      return;
+    }
+    if (text.includes('dashboard') || text.includes('home')) {
+      handleNavigate('dashboard');
+      speakApp('Opening dashboard.');
+      return;
+    }
+    if (text.includes('session')) {
+      handleNavigate('dashboard');
+      setDashboardView('sessions');
+      speakApp('Opening sessions.');
+      return;
+    }
+    if (text.includes('progress') || text.includes('statistics')) {
+      handleNavigate('dashboard');
+      setDashboardView('statistics');
+      speakApp('Opening progress.');
+      return;
+    }
+    if (text.includes('report')) {
+      handleNavigate('dashboard');
+      setDashboardView('reports');
+      speakApp('Opening reports.');
+      return;
+    }
+    if (text.includes('profile')) {
+      handleNavigate('dashboard');
+      setDashboardView('profile');
+      speakApp('Opening profile.');
+      return;
+    }
+  }, [explainAppVoiceScript, handleNavigate, screen, speakApp]);
+
+  useEffect(() => {
+    if (!token || !user || screen === 'landing' || screen === 'login' || screen === 'register' || screen === 'profileSetup') return;
+
+    if (!appVoiceWelcomeSpokenRef.current) {
+      appVoiceWelcomeSpokenRef.current = true;
+      explainAppVoiceScript();
+    }
+  }, [explainAppVoiceScript, screen, token, user]);
+
+  useEffect(() => {
+    if (!token || !user || !appVoiceEnabled || screen === 'landing' || screen === 'login' || screen === 'register' || screen === 'profileSetup') {
+      if (appVoiceRecognitionRef.current) {
+        try { appVoiceRecognitionRef.current.stop(); } catch (e) { console.warn('Could not stop app voice recognition', e); }
+        appVoiceRecognitionRef.current = null;
+      }
+      return;
+    }
+
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR || appVoiceRecognitionRef.current) return;
+    const recognition = new SR();
+    recognition.lang = 'en-US';
+    recognition.interimResults = true;
+    recognition.continuous = true;
+    recognition.maxAlternatives = 1;
+    recognition.onstart = () => {
+      appVoiceRecognitionRef.current = recognition;
+    };
+    recognition.onerror = (event) => {
+      console.warn('App speech recognition error:', event.error || event);
+      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+        setAppVoiceEnabled(false);
+        localStorage.setItem('voiceMode', 'false');
+      }
+    };
+    recognition.onresult = (event) => {
+      const result = event.results[event.results.length - 1];
+      const text = (result?.[0]?.transcript || '').trim();
+      const isFinal = result?.isFinal !== false;
+      const isImmediate = /yes|no|dashboard|home|sessions|progress|statistics|reports|profile|therapy|camera|start|raise|lower|open|close|clench|clinch|fist|scroll|pain level|pause|resume|end session|end game|reach target|help|voice/.test(text.toLowerCase());
+      if (!text || (!isFinal && !isImmediate)) return;
+
+      if (text.toLowerCase().includes('yes') && localStorage.getItem('voiceModePrompted') === 'true') {
+        setAppVoiceEnabled(true);
+        localStorage.setItem('voiceMode', 'true');
+        explainAppVoiceScript();
+        return;
+      }
+      if (text.toLowerCase().includes('no') && localStorage.getItem('voiceModePrompted') === 'true' && profile?.amputationSide !== 'BILATERAL') {
+        setAppVoiceEnabled(false);
+        localStorage.setItem('voiceMode', 'false');
+        speakApp('Voice mode stopped. You can use the screen controls.');
+        return;
+      }
+
+      processAppVoiceCommand(text);
+    };
+    recognition.onend = () => {
+      if (appVoiceRecognitionRef.current === recognition && appVoiceEnabled) {
+        window.setTimeout(() => {
+          if (appVoiceRecognitionRef.current !== recognition || !appVoiceEnabled) return;
+          try { recognition.start(); } catch (e) { console.warn('Could not restart app voice recognition', e); }
+        }, 350);
+      }
+    };
+    appVoiceRecognitionRef.current = recognition;
+    try { recognition.start(); } catch (e) { console.warn('Could not start app voice recognition', e); }
+
+    return () => {
+      appVoiceRecognitionRef.current = null;
+      try { recognition.stop(); } catch (e) { console.warn('Could not clean up app voice recognition', e); }
+    };
+  }, [appVoiceEnabled, explainAppVoiceScript, processAppVoiceCommand, profile?.amputationSide, screen, speakApp, token, user]);
 
   if (checkingAuth) {
     return (
