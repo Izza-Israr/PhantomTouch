@@ -254,15 +254,27 @@ export class HandModel3D {
     }
   }
 
-  _buildHandFromTemplate(rawJoints, templateHand, targetWrist, mirrorX = false) {
+  _buildHandFromTemplate(rawJoints, templateHand, targetWrist, mirrorX = false, anchorHand = null) {
     if (!templateHand || !templateHand[0] || !targetWrist) return;
-    rawJoints[0] = targetWrist;
-    for (let i = 1; i < 21; i++) {
-      rawJoints[i] = this._offsetFromAnchor(templateHand[i], templateHand[0], targetWrist, mirrorX);
-    }
+    const wristAnchor = anchorHand?.[0] || targetWrist;
+    rawJoints[0] = wristAnchor;
+
+    Object.values(FINGER_CHAINS).forEach((chain) => {
+      const baseIdx = chain[0];
+      const templateBase = templateHand[baseIdx] || templateHand[0];
+      const targetBase = anchorHand?.[baseIdx]
+        || this._offsetFromAnchor(templateBase, templateHand[0], wristAnchor, mirrorX)
+        || wristAnchor;
+
+      rawJoints[baseIdx] = targetBase;
+      for (let i = 1; i < chain.length; i++) {
+        const jointIdx = chain[i];
+        rawJoints[jointIdx] = this._offsetFromAnchor(templateHand[jointIdx], templateBase, targetBase, mirrorX);
+      }
+    });
   }
 
-  _buildMissingFinger(rawJoints, finger, healthyHand, amputatedHand, fallbackWrist) {
+  _buildMissingFinger(rawJoints, finger, healthyHand, amputatedHand, fallbackWrist, mirrorX = true) {
     const chain = FINGER_CHAINS[finger];
     if (!chain || !healthyHand) return;
 
@@ -274,7 +286,7 @@ export class HandModel3D {
     rawJoints[baseIdx] = targetBase;
     for (let i = 1; i < chain.length; i++) {
       const jointIdx = chain[i];
-      rawJoints[jointIdx] = this._offsetFromAnchor(healthyHand[jointIdx], sourceBase, targetBase, true);
+      rawJoints[jointIdx] = this._offsetFromAnchor(healthyHand[jointIdx], sourceBase, targetBase, mirrorX);
     }
   }
 
@@ -388,17 +400,24 @@ export class HandModel3D {
         }
       }
 
+      const livePalmWrist = hand?.[0] || amputatedHand?.[0] || null;
+      if (livePalmWrist) wristPoint = livePalmWrist;
+
       rawJoints[21] = shoulderPoint;
       rawJoints[22] = elbowPoint || shoulderPoint;
       rawJoints[23] = wristPoint || elbowPoint || shoulderPoint;
 
-      if (level === 'FINGERS' && amputatedHand) {
-        for (let i = 0; i < 21; i++) rawJoints[i] = amputatedHand[i] || rawJoints[i];
+      if (level === 'FINGERS' && (hand || amputatedHand)) {
+        const anchorHand = amputatedHand || hand;
+        rawJoints[0] = anchorHand?.[0] || rawJoints[0];
+        [1, 5, 9, 13, 17].forEach((baseIdx) => {
+          rawJoints[baseIdx] = anchorHand?.[baseIdx] || rawJoints[baseIdx];
+        });
         getMissingFingers(this.configRef, side).forEach((finger) => {
-          this._buildMissingFinger(rawJoints, finger, templateHand || hand, amputatedHand, rawJoints[23]);
+          this._buildMissingFinger(rawJoints, finger, templateHand || hand, anchorHand, rawJoints[23], side === 'LEFT');
         });
       } else {
-        this._buildHandFromTemplate(rawJoints, templateHand || hand, rawJoints[23], side === 'LEFT');
+        this._buildHandFromTemplate(rawJoints, templateHand || hand, rawJoints[23], side === 'LEFT', hand || amputatedHand);
       }
 
     } else {

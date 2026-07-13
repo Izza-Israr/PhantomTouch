@@ -250,15 +250,16 @@ export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
       const detectedHand = leftHand || rightHand;
       const leftIdx = getPoseIdx('LEFT');
       const rightIdx = getPoseIdx('RIGHT');
-      const leftFallback = cloneLandmarks(detectedHand) || makeFallbackHand(pose[leftIdx.wr] || pose[leftIdx.el] || pose[leftIdx.sh], 'LEFT');
-      const rightFallback = cloneLandmarks(detectedHand) || makeFallbackHand(pose[rightIdx.wr] || pose[rightIdx.el] || pose[rightIdx.sh], 'RIGHT');
+      const leftFallback = cloneLandmarks(leftHand || detectedHand) || makeFallbackHand(pose[leftIdx.wr] || pose[leftIdx.el] || pose[leftIdx.sh], 'LEFT');
+      const rightFallback = cloneLandmarks(rightHand || detectedHand) || makeFallbackHand(pose[rightIdx.wr] || pose[rightIdx.el] || pose[rightIdx.sh], 'RIGHT');
       const leftRecorded = getRecordedPose('LEFT', pose, leftFallback);
       const rightRecorded = getRecordedPose('RIGHT', pose, rightFallback);
 
       const leftPhantom = bilateralLeftPhantomRef.current?.update(
         {
           pose,
-          hand: detectedHand,
+          hand: leftHand,
+          amputatedHand: leftHand,
           templateHand: leftRecorded.hand,
           recordedArm: leftRecorded.arm,
           indices: leftIdx,
@@ -272,7 +273,8 @@ export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
       const rightPhantom = bilateralRightPhantomRef.current?.update(
         {
           pose,
-          hand: detectedHand,
+          hand: rightHand,
+          amputatedHand: rightHand,
           templateHand: rightRecorded.hand,
           recordedArm: rightRecorded.arm,
           indices: rightIdx,
