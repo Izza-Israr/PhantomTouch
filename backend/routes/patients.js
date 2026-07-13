@@ -16,6 +16,49 @@ const getBilateralPatientFields = (body) => ({
   voice_mode_preferred: Boolean(body.voiceModePreferred || body.amputationSide === 'BILATERAL')
 });
 
+async function getAuthorizedPatient(req, res, patientId) {
+  const { data: patient, error: patientError } = await supabase
+    .from('patients')
+    .select('*')
+    .eq('id', patientId)
+    .maybeSingle();
+
+  if (patientError) {
+    console.error('Patient lookup error:', patientError);
+    res.status(500).json({ message: 'Failed to validate patient access' });
+    return null;
+  }
+  if (!patient) {
+    res.status(404).json({ message: 'Patient not found' });
+    return null;
+  }
+
+  if (req.user.role === 'PATIENT' && patient.user_id !== req.user.id) {
+    res.status(403).json({ message: 'Access denied' });
+    return null;
+  }
+
+  if (req.user.role === 'CLINICIAN') {
+    const { data: clinician, error: clinicianError } = await supabase
+      .from('clinicians')
+      .select('id')
+      .eq('user_id', req.user.id)
+      .maybeSingle();
+
+    if (clinicianError) {
+      console.error('Clinician lookup error:', clinicianError);
+      res.status(500).json({ message: 'Failed to validate clinician access' });
+      return null;
+    }
+    if (!clinician || patient.assigned_clinician_id !== clinician.id) {
+      res.status(403).json({ message: 'Access denied. Patient is not assigned to you.' });
+      return null;
+    }
+  }
+
+  return patient;
+}
+
 // Get all patients assigned to a clinician (or the current patient if patient role)
 router.get('/', auth, async (req, res) => {
   try {
@@ -166,6 +209,74 @@ router.get('/:id', auth, async (req, res) => {
   } catch (error) {
     console.error('Fetch patient detail error:', error);
     res.status(500).json({ message: 'Failed to retrieve patient details' });
+  }
+});
+
+router.get('/:id/bilateral-pose-library', auth, async (req, res) => {
+  try {
+    const patient = await getAuthorizedPatient(req, res, req.params.id);
+    if (!patient) return;
+
+    const { data, error } = await supabase
+      .from('bilateral_pose_libraries')
+      .select('*')
+      .eq('patient_id', patient.id)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Fetch bilateral pose library error:', error);
+      return res.status(500).json({ message: 'Failed to retrieve bilateral pose library' });
+    }
+
+    res.json({
+      patientId: patient.id,
+      poseLibrary: data?.pose_library || {},
+      recordedAt: data?.recorded_at || null,
+      updatedAt: data?.updated_at || null,
+    });
+  } catch (error) {
+    console.error('Fetch bilateral pose library error:', error);
+    res.status(500).json({ message: 'Failed to retrieve bilateral pose library' });
+  }
+});
+
+router.put('/:id/bilateral-pose-library', auth, async (req, res) => {
+  try {
+    const patient = await getAuthorizedPatient(req, res, req.params.id);
+    if (!patient) return;
+
+    const poseLibrary = req.body?.poseLibrary;
+    if (!poseLibrary || typeof poseLibrary !== 'object' || Array.isArray(poseLibrary)) {
+      return res.status(400).json({ message: 'poseLibrary must be an object keyed by action name' });
+    }
+
+    const now = new Date().toISOString();
+    const { data, error } = await supabase
+      .from('bilateral_pose_libraries')
+      .upsert([{
+        patient_id: patient.id,
+        pose_library: poseLibrary,
+        recorded_by_user_id: req.user.id,
+        recorded_at: now,
+        updated_at: now,
+      }], { onConflict: 'patient_id' })
+      .select('*')
+      .single();
+
+    if (error) {
+      console.error('Save bilateral pose library error:', error);
+      return res.status(500).json({ message: 'Failed to save bilateral pose library' });
+    }
+
+    res.json({
+      patientId: patient.id,
+      poseLibrary: data.pose_library || {},
+      recordedAt: data.recorded_at || null,
+      updatedAt: data.updated_at || null,
+    });
+  } catch (error) {
+    console.error('Save bilateral pose library error:', error);
+    res.status(500).json({ message: 'Failed to save bilateral pose library' });
   }
 });
 

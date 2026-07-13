@@ -1,4 +1,4 @@
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useEffect } from 'react';
 import * as THREE from 'three';
 import { HandModel3D } from '../utils/HandModel3D';
 
@@ -12,6 +12,43 @@ function getPoseIdx(side) {
     : { sh:12, el:14, wr:16 };
 }
 
+const cloneLandmark = (lm) => lm ? { x: lm.x, y: lm.y, z: lm.z || 0, visibility: lm.visibility } : null;
+const cloneLandmarks = (landmarks) => Array.isArray(landmarks) ? landmarks.map(cloneLandmark) : null;
+
+const canonicalPoseName = (text) => {
+  const value = String(text || '').toLowerCase();
+  if (/victory|peace|v sign|two fingers/.test(value)) return 'victory';
+  if (/thumb|thumbs up/.test(value)) return 'thumbs_up';
+  if (/point|pointing/.test(value)) return 'point';
+  if (/pinch|pinching/.test(value)) return 'pinch';
+  if (/clench|clinch|fist|close/.test(value)) return 'clench_fist';
+  if (/open|relax|flat/.test(value)) return 'open_hand';
+  return null;
+};
+
+const makeFallbackHand = (wrist, side) => {
+  if (!wrist) return null;
+  const spread = side === 'LEFT' ? -1 : 1;
+  const points = Array.from({ length: 21 }, () => ({ x: wrist.x, y: wrist.y, z: wrist.z || 0 }));
+  const bases = [
+    [1, -0.045 * spread],
+    [5, -0.025 * spread],
+    [9, 0],
+    [13, 0.025 * spread],
+    [17, 0.045 * spread],
+  ];
+  bases.forEach(([base, xOffset], fingerIndex) => {
+    for (let step = 0; step < 4; step++) {
+      points[base + step] = {
+        x: wrist.x + xOffset + (step * 0.008 * Math.sign(xOffset || spread)),
+        y: wrist.y - 0.035 - (step * 0.03) - (fingerIndex === 0 ? step * 0.01 : 0),
+        z: wrist.z || 0,
+      };
+    }
+  });
+  return points;
+};
+
 export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
   const sceneRef    = useRef(null);
   const cameraRef   = useRef(null);
@@ -23,6 +60,9 @@ export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
   // renderVisible:true   → full 3D render (phantom hand)
   const healthyHandRef = useRef(null);
   const phantomHandRef = useRef(null);
+  const bilateralLeftPhantomRef = useRef(null);
+  const bilateralRightPhantomRef = useRef(null);
+  const activeBilateralPoseRef = useRef('open_hand');
 
   const holisticRef = useRef(null);
   const mpCamRef    = useRef(null);
@@ -34,9 +74,6 @@ export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
 
   const lastUiUpdateRef = useRef(0);
   const UI_UPDATE_MS    = 60;
-
-  const VIS_THRESHOLD = 0.45;
-  const isVis = (lm) => lm && (lm.visibility === undefined || lm.visibility > VIS_THRESHOLD);
 
   // ── Video rect: corrects for pillarboxing / letterboxing ─────────────────
   // The <video> uses object-fit:contain inside the Three.js canvas.
@@ -86,6 +123,8 @@ export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
     healthyHandRef.current = new HandModel3D(scene, configRef, 0x00ff00, { renderVisible: false });
     // Phantom hand: renderVisible:true (default) → fully visible magenta skeleton
     phantomHandRef.current = new HandModel3D(scene, configRef, 0xff00ff);
+    bilateralLeftPhantomRef.current = new HandModel3D(scene, configRef, 0xff00ff);
+    bilateralRightPhantomRef.current = new HandModel3D(scene, configRef, 0xff66cc);
 
     clockRef.current = new THREE.Clock();
 
@@ -117,7 +156,39 @@ export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
   const hideArm = useCallback(() => {
     healthyHandRef.current?.hideAll();
     phantomHandRef.current?.hideAll();
+    bilateralLeftPhantomRef.current?.hideAll();
+    bilateralRightPhantomRef.current?.hideAll();
   }, []);
+
+  const applyCommandPose = useCallback((event) => {
+    const nextPose = canonicalPoseName(event?.detail?.text);
+    if (!nextPose) return;
+    activeBilateralPoseRef.current = nextPose;
+    if (configRef.current) configRef.current.bilateralActivePose = nextPose;
+  }, [configRef]);
+
+  useEffect(() => {
+    window.addEventListener('phantomtouch:voice-command', applyCommandPose);
+    return () => window.removeEventListener('phantomtouch:voice-command', applyCommandPose);
+  }, [applyCommandPose]);
+
+  const getRecordedPose = useCallback((side, pose, fallbackHand) => {
+    const library = configRef.current?.bilateralPoseLibrary || {};
+    const action = configRef.current?.bilateralActivePose || activeBilateralPoseRef.current || 'open_hand';
+    const recorded = library[action] || library.open_hand || null;
+    const sideKey = side === 'RIGHT' ? 'RIGHT' : 'LEFT';
+    const indices = getPoseIdx(sideKey);
+    const arm = recorded?.arms?.[sideKey] || null;
+    return {
+      action,
+      hand: cloneLandmarks(recorded?.hand) || fallbackHand,
+      arm: arm ? {
+        shoulder: cloneLandmark(arm.shoulder) || cloneLandmark(pose?.[indices.sh]),
+        elbow: cloneLandmark(arm.elbow) || cloneLandmark(pose?.[indices.el]),
+        wrist: cloneLandmark(arm.wrist) || cloneLandmark(pose?.[indices.wr]),
+      } : null,
+    };
+  }, [configRef]);
 
   // ── Core holistic processor ───────────────────────────────────────────────
   const processHolisticData = useCallback((results) => {
@@ -134,6 +205,91 @@ export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
 
     const leftHand  = results.leftHandLandmarks  || null;
     const rightHand = results.rightHandLandmarks || null;
+    configRef.current.latestTrackingSnapshot = {
+      pose: cloneLandmarks(pose),
+      leftHand: cloneLandmarks(leftHand),
+      rightHand: cloneLandmarks(rightHand),
+      capturedAt: now,
+    };
+
+    if (configRef.current?.amputationSide === 'BILATERAL' && configRef.current?.bilateralRecordingMode) {
+      healthyHandRef.current?.hideAll();
+      phantomHandRef.current?.hideAll();
+
+      const videoRect = getVideoRect();
+      const leftIdx = getPoseIdx('LEFT');
+      const rightIdx = getPoseIdx('RIGHT');
+      const liveLeft = bilateralLeftPhantomRef.current?.update(
+        { pose, hand: leftHand, indices: leftIdx, isPhantom: false, side: 'LEFT' },
+        cameraRef.current,
+        videoRect
+      );
+      const liveRight = bilateralRightPhantomRef.current?.update(
+        { pose, hand: rightHand, indices: rightIdx, isPhantom: false, side: 'RIGHT' },
+        cameraRef.current,
+        videoRect
+      );
+
+      if (onLandmarksUpdate && (now - lastUiUpdateRef.current) >= UI_UPDATE_MS) {
+        onLandmarksUpdate({
+          real: null,
+          phantom: null,
+          recordingPreview: { left: liveLeft, right: liveRight },
+          recordingSnapshot: configRef.current.latestTrackingSnapshot
+        });
+        lastUiUpdateRef.current = now;
+      }
+      return;
+    }
+
+    if (configRef.current?.amputationSide === 'BILATERAL') {
+      healthyHandRef.current?.hideAll();
+      phantomHandRef.current?.hideAll();
+
+      const videoRect = getVideoRect();
+      const detectedHand = leftHand || rightHand;
+      const leftIdx = getPoseIdx('LEFT');
+      const rightIdx = getPoseIdx('RIGHT');
+      const leftFallback = cloneLandmarks(detectedHand) || makeFallbackHand(pose[leftIdx.wr] || pose[leftIdx.el] || pose[leftIdx.sh], 'LEFT');
+      const rightFallback = cloneLandmarks(detectedHand) || makeFallbackHand(pose[rightIdx.wr] || pose[rightIdx.el] || pose[rightIdx.sh], 'RIGHT');
+      const leftRecorded = getRecordedPose('LEFT', pose, leftFallback);
+      const rightRecorded = getRecordedPose('RIGHT', pose, rightFallback);
+
+      const leftPhantom = bilateralLeftPhantomRef.current?.update(
+        {
+          pose,
+          hand: detectedHand,
+          templateHand: leftRecorded.hand,
+          recordedArm: leftRecorded.arm,
+          indices: leftIdx,
+          isPhantom: true,
+          isBilateralPhantom: true,
+          side: 'LEFT',
+        },
+        cameraRef.current,
+        videoRect
+      );
+      const rightPhantom = bilateralRightPhantomRef.current?.update(
+        {
+          pose,
+          hand: detectedHand,
+          templateHand: rightRecorded.hand,
+          recordedArm: rightRecorded.arm,
+          indices: rightIdx,
+          isPhantom: true,
+          isBilateralPhantom: true,
+          side: 'RIGHT',
+        },
+        cameraRef.current,
+        videoRect
+      );
+
+      if (onLandmarksUpdate && (now - lastUiUpdateRef.current) >= UI_UPDATE_MS) {
+        onLandmarksUpdate({ real: null, phantom: { left: leftPhantom, right: rightPhantom, action: leftRecorded.action } });
+        lastUiUpdateRef.current = now;
+      }
+      return;
+    }
 
     // ── Stable side assignment (never re-detected mid-session) ────────────
     // amputationSide = the MISSING limb; healthySide = the one with a real hand
@@ -157,13 +313,15 @@ export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
 
     // Real hand: tracked but NOT rendered (renderVisible:false in constructor)
     const real = healthyHandRef.current.update(
-      { pose, hand: healthyHand, indices: healthyIdx, isPhantom: false },
+      { pose, hand: healthyHand, indices: healthyIdx, isPhantom: false, side: healthySide },
       cameraRef.current, videoRect
     );
 
-    // Phantom hand: rendered in magenta, fingers mirror the healthy hand
+    // Phantom hand: rendered in magenta, fingers mirror the healthy hand.
+    // For bilateral users, the same tracking stream is used to drive both phantom limbs,
+    // but each limb resolves its own amputation settings (level + missing fingers) from the profile.
     const phantom = phantomHandRef.current.update(
-      { pose, hand: healthyHand, amputatedHand, indices: ampIdx, isPhantom: true },
+      { pose, hand: healthyHand, amputatedHand, indices: ampIdx, isPhantom: true, side: ampSide },
       cameraRef.current, videoRect
     );
 
@@ -173,7 +331,7 @@ export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
       onLandmarksUpdate({ real, phantom });
       lastUiUpdateRef.current = now;
     }
-  }, [configRef, onLandmarksUpdate, hideArm, getVideoRect]);
+  }, [configRef, onLandmarksUpdate, hideArm, getVideoRect, getRecordedPose]);
 
   // ── MediaPipe init ────────────────────────────────────────────────────────
   const initMediaPipe = useCallback((videoEl) => {
@@ -236,6 +394,8 @@ export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
     rendererRef.current?.dispose();
     healthyHandRef.current?.destroy();
     phantomHandRef.current?.destroy();
+    bilateralLeftPhantomRef.current?.destroy();
+    bilateralRightPhantomRef.current?.destroy();
     sceneRef.current = null; cameraRef.current = null;
   }, [stopRenderLoop]);
 

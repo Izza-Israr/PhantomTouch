@@ -181,7 +181,7 @@ function App() {
 
   const explainAppVoiceScript = useCallback(() => {
     speakApp(
-      'Voice mode is active. Say dashboard, scroll down, scroll up, therapy session, therapy game, or camera mirror. During therapy say start therapy, raise hands, lower hands, pain level is followed by a number, pause, resume, end session, end game, or reach target.'
+      'Voice mode is active. Say dashboard, scroll down, scroll up, therapy session, therapy game, or camera mirror. During therapy say start therapy, raise hands, lower hands, open hand, clench fist, victory, thumbs up, point, pinch, pain level is followed by a number, pause, resume, end session, end game, or reach target.'
     );
   }, [speakApp]);
 
@@ -297,7 +297,7 @@ function App() {
       const result = event.results[event.results.length - 1];
       const text = (result?.[0]?.transcript || '').trim();
       const isFinal = result?.isFinal !== false;
-      const isImmediate = /yes|no|dashboard|home|sessions|progress|statistics|reports|profile|therapy|camera|start|raise|lower|open|close|clench|clinch|fist|scroll|pain level|pause|resume|end session|end game|reach target|help|voice/.test(text.toLowerCase());
+      const isImmediate = /yes|no|dashboard|home|sessions|progress|statistics|reports|profile|therapy|camera|start|raise|lower|open|close|clench|clinch|fist|victory|peace|thumb|point|pinch|scroll|pain level|pause|resume|end session|end game|reach target|help|voice/.test(text.toLowerCase());
       if (!text || (!isFinal && !isImmediate)) return;
 
       if (text.toLowerCase().includes('yes') && localStorage.getItem('voiceModePrompted') === 'true') {

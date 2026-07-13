@@ -65,11 +65,32 @@ function normalizeAmputationLevel(level) {
   }
 }
 
-function getMissingFingers(configRef) {
-  const configured = configRef.current?.missingFingers;
+function getMissingFingerList(configured) {
   if (!Array.isArray(configured) || configured.length === 0) return ALL_FINGERS;
   const normalized = configured.map(finger => String(finger).toUpperCase());
   return normalized.filter(finger => FINGER_CHAINS[finger]);
+}
+
+function getMissingFingers(configRef, side = null) {
+  const current = configRef.current || {};
+  const isBilateral = current.amputationSide === 'BILATERAL';
+  const configured = isBilateral
+    ? (String(side).toUpperCase() === 'RIGHT' ? current.rightMissingFingers : current.leftMissingFingers)
+    : current.missingFingers;
+  return getMissingFingerList(configured);
+}
+
+export function resolveAmputationSettingsForSide(configRef, side = null) {
+  const current = configRef.current || {};
+  const isBilateral = current.amputationSide === 'BILATERAL';
+  const sideName = String(side || '').toUpperCase();
+  const levelValue = isBilateral
+    ? (sideName === 'RIGHT' ? current.rightAmputationLevel : current.leftAmputationLevel)
+    : current.amputationLevel;
+  return {
+    level: normalizeAmputationLevel(levelValue),
+    missingFingers: getMissingFingers(configRef, side),
+  };
 }
 
 // ─── HandModel3D ─────────────────────────────────────────────────────────────
@@ -233,6 +254,14 @@ export class HandModel3D {
     }
   }
 
+  _buildHandFromTemplate(rawJoints, templateHand, targetWrist, mirrorX = false) {
+    if (!templateHand || !templateHand[0] || !targetWrist) return;
+    rawJoints[0] = targetWrist;
+    for (let i = 1; i < 21; i++) {
+      rawJoints[i] = this._offsetFromAnchor(templateHand[i], templateHand[0], targetWrist, mirrorX);
+    }
+  }
+
   _buildMissingFinger(rawJoints, finger, healthyHand, amputatedHand, fallbackWrist) {
     const chain = FINGER_CHAINS[finger];
     if (!chain || !healthyHand) return;
@@ -249,7 +278,7 @@ export class HandModel3D {
     }
   }
 
-  _getPhantomRenderMask(level) {
+  _getPhantomRenderMask(level, side = null) {
     if (level === 'ABOVE_ELBOW') {
       return [21, 22, 23, ...Array.from({ length: 21 }, (_, idx) => idx)];
     }
@@ -260,14 +289,14 @@ export class HandModel3D {
       return [23, ...Array.from({ length: 21 }, (_, idx) => idx)];
     }
     if (level === 'FINGERS') {
-      return getMissingFingers(this.configRef).flatMap(finger => FINGER_CHAINS[finger]);
+      return getMissingFingers(this.configRef, side).flatMap(finger => FINGER_CHAINS[finger]);
     }
     return Array.from({ length: this.jointCount }, (_, idx) => idx);
   }
 
   update(armData, camera, videoRect = null) {
     if (!armData || !camera) { this.hideAll(); return null; }
-    const { pose, hand, amputatedHand, indices, isPhantom } = armData;
+    const { pose, hand, amputatedHand, templateHand, recordedArm, indices, isPhantom, isBilateralPhantom, side } = armData;
     if (!pose) { this.hideAll(); return null; }
 
     this.group.visible = this.options.visible !== false;
@@ -294,6 +323,84 @@ export class HandModel3D {
         }
       }
 
+    } else if (isBilateralPhantom) {
+      const aShRaw = pose[indices.sh];
+      const aElRaw = pose[indices.el];
+      const aWrRaw = pose[indices.wr];
+      const { level } = resolveAmputationSettingsForSide(this.configRef, side);
+      this._setRenderMask(this._getPhantomRenderMask(level, side));
+
+      const shoulderPoint = this._visible(aShRaw) ? aShRaw : null;
+      let elbowPoint = this._visible(aElRaw) ? aElRaw : null;
+      let wristPoint = this._visible(aWrRaw) ? aWrRaw : null;
+
+      if (!shoulderPoint) { this.hideAll(); return null; }
+
+      if (level === 'ABOVE_ELBOW' && recordedArm?.shoulder && recordedArm?.elbow && recordedArm?.wrist) {
+        elbowPoint = this._offsetFromAnchor(recordedArm.elbow, recordedArm.shoulder, shoulderPoint, false) || elbowPoint;
+        wristPoint = this._offsetFromAnchor(recordedArm.wrist, recordedArm.elbow, elbowPoint, false) || wristPoint;
+      } else if (level === 'ABOVE_ELBOW') {
+        const defaultUpper = side === 'LEFT'
+          ? { x: -0.08, y: 0.16, z: 0 }
+          : { x: 0.08, y: 0.16, z: 0 };
+        elbowPoint = {
+          x: shoulderPoint.x + defaultUpper.x,
+          y: shoulderPoint.y + defaultUpper.y,
+          z: shoulderPoint.z || 0,
+        };
+        wristPoint = {
+          x: elbowPoint.x + defaultUpper.x * 0.9,
+          y: elbowPoint.y + defaultUpper.y * 0.95,
+          z: elbowPoint.z || 0,
+        };
+      } else if (level === 'BELOW_ELBOW') {
+        if (!elbowPoint) {
+          elbowPoint = {
+            x: shoulderPoint.x + (side === 'LEFT' ? -0.08 : 0.08),
+            y: shoulderPoint.y + 0.16,
+            z: shoulderPoint.z || 0,
+          };
+        }
+        wristPoint = recordedArm?.elbow && recordedArm?.wrist
+          ? this._offsetFromAnchor(recordedArm.wrist, recordedArm.elbow, elbowPoint, false)
+          : null;
+        if (!wristPoint) {
+          wristPoint = {
+            x: elbowPoint.x + (elbowPoint.x - shoulderPoint.x) * 0.85,
+            y: elbowPoint.y + (elbowPoint.y - shoulderPoint.y) * 0.85,
+            z: elbowPoint.z || 0,
+          };
+        }
+      } else {
+        if (!elbowPoint) {
+          elbowPoint = {
+            x: shoulderPoint.x + (side === 'LEFT' ? -0.07 : 0.07),
+            y: shoulderPoint.y + 0.14,
+            z: shoulderPoint.z || 0,
+          };
+        }
+        if (!wristPoint) {
+          wristPoint = {
+            x: elbowPoint.x + (elbowPoint.x - shoulderPoint.x) * 0.85,
+            y: elbowPoint.y + (elbowPoint.y - shoulderPoint.y) * 0.85,
+            z: elbowPoint.z || 0,
+          };
+        }
+      }
+
+      rawJoints[21] = shoulderPoint;
+      rawJoints[22] = elbowPoint || shoulderPoint;
+      rawJoints[23] = wristPoint || elbowPoint || shoulderPoint;
+
+      if (level === 'FINGERS' && amputatedHand) {
+        for (let i = 0; i < 21; i++) rawJoints[i] = amputatedHand[i] || rawJoints[i];
+        getMissingFingers(this.configRef, side).forEach((finger) => {
+          this._buildMissingFinger(rawJoints, finger, templateHand || hand, amputatedHand, rawJoints[23]);
+        });
+      } else {
+        this._buildHandFromTemplate(rawJoints, templateHand || hand, rawJoints[23], side === 'LEFT');
+      }
+
     } else {
       const hSh = pose[indices.healthySh];
       const hEl = pose[indices.healthyEl];
@@ -303,8 +410,8 @@ export class HandModel3D {
       const aShRaw = pose[indices.sh];
       const aElRaw = pose[indices.el];
       const aWrRaw = pose[indices.wr];
-      const level = normalizeAmputationLevel(this.configRef.current?.amputationLevel);
-      this._setRenderMask(this._getPhantomRenderMask(level));
+      const { level } = resolveAmputationSettingsForSide(this.configRef, side);
+      this._setRenderMask(this._getPhantomRenderMask(level, side));
 
       const centerX = this._visible(aShRaw) ? (hSh.x + aShRaw.x) / 2 : 0.5;
       const reflect = (lm) => this._mirrorAroundCenter(lm, centerX);
@@ -347,7 +454,7 @@ export class HandModel3D {
         if (amputatedHand) {
           for (let i = 0; i < 21; i++) rawJoints[i] = amputatedHand[i] || rawJoints[i];
         }
-        getMissingFingers(this.configRef).forEach((finger) => {
+        getMissingFingers(this.configRef, side).forEach((finger) => {
           this._buildMissingFinger(rawJoints, finger, hand, amputatedHand, wristPoint);
         });
       } else {

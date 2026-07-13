@@ -100,6 +100,24 @@ ALTER TABLE therapy_sessions
 ALTER TABLE therapy_sessions
   ADD COLUMN IF NOT EXISTS session_type text not null default 'GAME' check (session_type in ('GAME', 'CAMERA'));
 
+create table bilateral_pose_libraries (
+  id uuid primary key default gen_random_uuid(),
+  patient_id uuid not null references patients(id) on delete cascade unique,
+  pose_library jsonb not null default '{}'::jsonb,
+  recorded_by_user_id uuid references users(id) on delete set null,
+  recorded_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+ALTER TABLE bilateral_pose_libraries
+  ADD COLUMN IF NOT EXISTS pose_library jsonb not null default '{}'::jsonb,
+  ADD COLUMN IF NOT EXISTS recorded_by_user_id uuid references users(id) on delete set null,
+  ADD COLUMN IF NOT EXISTS recorded_at timestamptz not null default now(),
+  ADD COLUMN IF NOT EXISTS updated_at timestamptz not null default now();
+
+CREATE UNIQUE INDEX IF NOT EXISTS bilateral_pose_libraries_patient_id_key
+  ON bilateral_pose_libraries(patient_id);
+
 create table chat_rooms (
   id uuid primary key default gen_random_uuid(),
   last_activity_at timestamptz not null default now()

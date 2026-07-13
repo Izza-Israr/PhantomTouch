@@ -1058,6 +1058,38 @@ label {
   font-size: 0.95rem;
 }
 
+.therapy-hud-compact {
+  gap: 12px;
+  padding: 18px;
+  scrollbar-gutter: stable;
+}
+
+.therapy-hud-compact .glass-panel {
+  padding: 14px !important;
+  border-radius: 16px !important;
+  flex-shrink: 0;
+}
+
+.therapy-hud-compact .hud-alert-banner {
+  padding: 10px 12px;
+  font-size: 0.82rem;
+}
+
+.therapy-hud-compact button,
+.therapy-hud-compact .btn {
+  border-radius: 12px;
+  line-height: 1.15;
+  white-space: normal;
+}
+
+.therapy-hud-compact .pain-number-row {
+  gap: 4px;
+}
+
+.therapy-hud-compact .pain-labels {
+  font-size: 0.72rem;
+}
+
 .game-stage-panel {
   flex-grow: 1;
   position: relative;

@@ -50,6 +50,22 @@ function makeDebugPointer(scene) {
 
 function spawnTargetPair(targetA, targetB, configRef) {
   const side = configRef.current.amputationSide || 'LEFT';
+  if (side === 'BILATERAL') {
+    const xOffset = 1.0 + Math.random() * 1.6;
+    const y = -1.2 + Math.random() * 2.4;
+
+    targetA.mesh.position.set(-xOffset, y, 0);
+    targetA.light.position.copy(targetA.mesh.position);
+    targetA.mesh.scale.set(1, 1, 1);
+    targetA.userData = { originalPosition: targetA.mesh.position.clone(), side: 'LEFT' };
+
+    targetB.mesh.position.set(xOffset, y, 0);
+    targetB.light.position.copy(targetB.mesh.position);
+    targetB.mesh.scale.set(1, 1, 1);
+    targetB.userData = { originalPosition: targetB.mesh.position.clone(), side: 'RIGHT' };
+    return;
+  }
+
   const xPhantom = side === 'LEFT' ? -1 : 1;
   const xReal = -xPhantom;
   const xOffset = 1.2 + Math.random() * 2.0;
@@ -64,6 +80,55 @@ function spawnTargetPair(targetA, targetB, configRef) {
   targetB.light.position.copy(targetB.mesh.position);
   targetB.mesh.scale.set(1, 1, 1);
   targetB.userData = { originalPosition: targetB.mesh.position.clone() };
+}
+
+const BILATERAL_POSE_STORAGE_KEY = 'phantomtouchBilateralPoseLibrary';
+const BILATERAL_RECORDING_ACTIONS = [
+  { key: 'open_hand', label: 'Open hand' },
+  { key: 'clench_fist', label: 'Clench fist' },
+  { key: 'victory', label: 'Victory' },
+  { key: 'thumbs_up', label: 'Thumbs up' },
+  { key: 'point', label: 'Point' },
+  { key: 'pinch', label: 'Pinch' },
+];
+const BILATERAL_POSE_ACTIONS = BILATERAL_RECORDING_ACTIONS;
+
+function getPoseStorageKey(patientId) {
+  return patientId ? `${BILATERAL_POSE_STORAGE_KEY}:${patientId}` : BILATERAL_POSE_STORAGE_KEY;
+}
+
+function hasPoseLibraryEntries(library) {
+  return Boolean(library && typeof library === 'object' && Object.values(library).some((pose) => pose?.hand));
+}
+
+function cloneLandmark(lm) {
+  return lm ? { x: lm.x, y: lm.y, z: lm.z || 0, visibility: lm.visibility } : null;
+}
+
+function cloneLandmarks(landmarks) {
+  return Array.isArray(landmarks) ? landmarks.map(cloneLandmark) : null;
+}
+
+function snapshotToRecordedPose(snapshot) {
+  if (!snapshot?.pose) return null;
+  const hand = cloneLandmarks(snapshot.leftHand) || cloneLandmarks(snapshot.rightHand);
+  const pose = snapshot.pose;
+  return {
+    hand,
+    arms: {
+      LEFT: {
+        shoulder: cloneLandmark(pose[11]),
+        elbow: cloneLandmark(pose[13]),
+        wrist: cloneLandmark(pose[15]),
+      },
+      RIGHT: {
+        shoulder: cloneLandmark(pose[12]),
+        elbow: cloneLandmark(pose[14]),
+        wrist: cloneLandmark(pose[16]),
+      },
+    },
+    capturedAt: Date.now(),
+  };
 }
 
 function burstParticles(scene, pos, toneHex, particlesRef) {
@@ -96,6 +161,7 @@ export const TherapyGame = ({ profile, onNavigate }) => {
     return savedMode === 'camera' || savedMode === 'game' ? savedMode : null;
   });
   const [secondsLeft, setSecondsLeft] = useState(120);
+  const [sessionDuration, setSessionDuration] = useState(120);
   const [targetsHit, setTargetsHit] = useState(0);
   const [targetsSpawned, setTargetsSpawned] = useState(0);
   const [peakROM, setPeakROM] = useState(0);
@@ -104,6 +170,21 @@ export const TherapyGame = ({ profile, onNavigate }) => {
   const [sessionSaved, setSessionSaved] = useState(null);
   const [isPaused, setIsPaused] = useState(false);
   const [painScore, setPainScore] = useState(4);
+  const [recordedPoseLibrary, setRecordedPoseLibrary] = useState(() => {
+    const patientId = profile?._id || profile?.id;
+    try {
+      return JSON.parse(
+        localStorage.getItem(getPoseStorageKey(patientId))
+          || localStorage.getItem(BILATERAL_POSE_STORAGE_KEY)
+          || '{}'
+      );
+    } catch {
+      return {};
+    }
+  });
+  const [recordingStatus, setRecordingStatus] = useState('');
+  const [activeBilateralPose, setActiveBilateralPose] = useState('open_hand');
+  const [recordingTrackingStatus, setRecordingTrackingStatus] = useState('Waiting for camera tracking');
 
   // null = not yet chosen; 'LEFT' or 'RIGHT' = amputated side selected by user
   const [amputationSide, setAmputationSide] = useState(profile?.amputationSide || null);
@@ -121,6 +202,14 @@ export const TherapyGame = ({ profile, onNavigate }) => {
     amputationSide: profile?.amputationSide || 'LEFT', // overwritten by selectSide before session
     amputationLevel: profile?.amputationLevel || 'FULL',
     missingFingers: profile?.missingFingers || [],
+    leftAmputationLevel: profile?.leftAmputationLevel || profile?.amputationLevel || 'TRANSRADIAL',
+    rightAmputationLevel: profile?.rightAmputationLevel || profile?.amputationLevel || 'TRANSRADIAL',
+    leftMissingFingers: profile?.leftMissingFingers || [],
+    rightMissingFingers: profile?.rightMissingFingers || [],
+    bilateralPoseLibrary: recordedPoseLibrary,
+    bilateralActivePose: 'open_hand',
+    bilateralRecordingMode: false,
+    latestTrackingSnapshot: null,
     meshScaleMultiplier: profile?.meshScaleMultiplier || 1.0,
     skinToneSliderHex: profile?.skinToneSliderHex || '#aa3bff',
     prescribedDuration: 120,
@@ -133,9 +222,15 @@ export const TherapyGame = ({ profile, onNavigate }) => {
     configRef.current.amputationSide = amputationSide || profile?.amputationSide || 'LEFT';
     configRef.current.amputationLevel = profile?.amputationLevel || 'TRANSRADIAL';
     configRef.current.missingFingers = profile?.missingFingers || [];
+    configRef.current.leftAmputationLevel = profile?.leftAmputationLevel || profile?.amputationLevel || 'TRANSRADIAL';
+    configRef.current.rightAmputationLevel = profile?.rightAmputationLevel || profile?.amputationLevel || 'TRANSRADIAL';
+    configRef.current.leftMissingFingers = profile?.leftMissingFingers || [];
+    configRef.current.rightMissingFingers = profile?.rightMissingFingers || [];
+    configRef.current.bilateralPoseLibrary = recordedPoseLibrary;
+    configRef.current.bilateralRecordingMode = gameState === 'recording';
     configRef.current.meshScaleMultiplier = profile?.meshScaleMultiplier || 1.0;
     configRef.current.skinToneSliderHex = profile?.skinToneSliderHex || '#aa3bff';
-  }, [amputationSide, profile]);
+  }, [amputationSide, profile, recordedPoseLibrary, gameState]);
 
   const targetPairRef = useRef(null);
   const debugPointerRef = useRef(null);
@@ -143,6 +238,60 @@ export const TherapyGame = ({ profile, onNavigate }) => {
   const gameStateRef = useRef('ready');
   const sessionEndInProgressRef = useRef(false);
   useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
+
+  const patientId = profile?._id || profile?.id || null;
+  const poseStorageKey = getPoseStorageKey(patientId);
+
+  const savePoseLibraryToDatabase = useCallback(async (library) => {
+    const token = localStorage.getItem('token');
+    if (!patientId || !token) return false;
+    try {
+      await axios.put(`http://localhost:5000/api/patients/${patientId}/bilateral-pose-library`, {
+        poseLibrary: library,
+      }, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return true;
+    } catch (error) {
+      console.warn('Could not save bilateral pose library to database:', error.response?.data || error.message);
+      return false;
+    }
+  }, [patientId]);
+
+  useEffect(() => {
+    const loadPoseLibrary = async () => {
+      const token = localStorage.getItem('token');
+      if (!patientId || !token) return;
+
+      try {
+        const res = await axios.get(`http://localhost:5000/api/patients/${patientId}/bilateral-pose-library`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const dbLibrary = res.data?.poseLibrary || {};
+        if (hasPoseLibraryEntries(dbLibrary)) {
+          localStorage.setItem(poseStorageKey, JSON.stringify(dbLibrary));
+          setRecordedPoseLibrary(dbLibrary);
+          configRef.current.bilateralPoseLibrary = dbLibrary;
+          return;
+        }
+
+        const localLibrary = JSON.parse(
+          localStorage.getItem(poseStorageKey)
+            || localStorage.getItem(BILATERAL_POSE_STORAGE_KEY)
+            || '{}'
+        );
+        if (hasPoseLibraryEntries(localLibrary)) {
+          setRecordedPoseLibrary(localLibrary);
+          configRef.current.bilateralPoseLibrary = localLibrary;
+          await savePoseLibraryToDatabase(localLibrary);
+        }
+      } catch (error) {
+        console.warn('Using local bilateral pose library because database load failed:', error.response?.data || error.message);
+      }
+    };
+
+    loadPoseLibrary();
+  }, [patientId, poseStorageKey, savePoseLibraryToDatabase]);
 
   const landmarksHandlerRef = useRef(null);
   const stableRelay = useCallback((data) => {
@@ -173,6 +322,7 @@ export const TherapyGame = ({ profile, onNavigate }) => {
           configRef.current.targetSpawnRadius = res.data.targetSpawnRadius || configRef.current.targetSpawnRadius;
           configRef.current.requiredHoverDwellTimeMs = res.data.requiredHoverDwellTimeMs || configRef.current.requiredHoverDwellTimeMs;
           configRef.current.prescriptionId = res.data.id || res.data._id || null;
+          setSessionDuration(configRef.current.prescribedDuration || 120);
           setSecondsLeft(configRef.current.prescribedDuration || 120);
         }
       } catch (error) {
@@ -185,27 +335,55 @@ export const TherapyGame = ({ profile, onNavigate }) => {
 
   const handleLandmarks = useCallback((real, phantom) => {
     if (isPaused) return;
-    if (gameStateRef.current !== 'running' || !real || !phantom) return;
+    if (gameStateRef.current !== 'running') return;
 
-    const indexTip = real[8];
-    const thumbTip = real[4];
+    const isBilateral = configRef.current.amputationSide === 'BILATERAL';
+    const getPinch = (hand) => {
+      const indexTip = hand?.[8];
+      const thumbTip = hand?.[4];
+      if (!indexTip || !thumbTip) return null;
+      return {
+        x: (indexTip.x + thumbTip.x) / 2,
+        y: (indexTip.y + thumbTip.y) / 2,
+      };
+    };
 
-    if (practiceMode === 'game' && targetPairRef.current && indexTip && thumbTip) {
+    if (practiceMode === 'game' && targetPairRef.current) {
       const { a: targetA, b: targetB } = targetPairRef.current;
       if (!targetA || !targetB) return;
 
-      const pinchX = (indexTip.x + thumbTip.x) / 2;
-      const pinchY = (indexTip.y + thumbTip.y) / 2;
+      let pinch = getPinch(real);
+      let targetForHit = targetA;
 
-      const basePosA = targetA.userData?.originalPosition || targetA.mesh.position;
+      if (isBilateral) {
+        const leftPinch = getPinch(phantom?.left);
+        const rightPinch = getPinch(phantom?.right);
+        const leftTarget = targetA.userData?.side === 'LEFT' ? targetA : targetB;
+        const rightTarget = targetA.userData?.side === 'RIGHT' ? targetA : targetB;
+        const leftPos = leftTarget.userData?.originalPosition || leftTarget.mesh.position;
+        const rightPos = rightTarget.userData?.originalPosition || rightTarget.mesh.position;
+        const leftDist = leftPinch ? Math.hypot(leftPinch.x - leftPos.x, leftPinch.y - leftPos.y) : Infinity;
+        const rightDist = rightPinch ? Math.hypot(rightPinch.x - rightPos.x, rightPinch.y - rightPos.y) : Infinity;
+        if (leftDist <= rightDist) {
+          pinch = leftPinch;
+          targetForHit = leftTarget;
+        } else {
+          pinch = rightPinch;
+          targetForHit = rightTarget;
+        }
+      }
+
+      if (!pinch) return;
+
+      const basePosA = targetForHit.userData?.originalPosition || targetForHit.mesh.position;
       const distA = Math.hypot(
-        pinchX - basePosA.x,
-        pinchY - basePosA.y,
+        pinch.x - basePosA.x,
+        pinch.y - basePosA.y,
       );
 
-      const realSh = real[21];
-      const phanSh = phantom[21];
-      if (realSh && phanSh && targetB.userData?.originalPosition && targetA.userData?.originalPosition) {
+      const realSh = real?.[21];
+      const phanSh = Array.isArray(phantom) ? phantom[21] : null;
+      if (!isBilateral && realSh && phanSh && targetB.userData?.originalPosition && targetA.userData?.originalPosition) {
         const dx = targetA.userData.originalPosition.x - realSh.x;
         const dy = targetA.userData.originalPosition.y - realSh.y;
 
@@ -215,7 +393,7 @@ export const TherapyGame = ({ profile, onNavigate }) => {
       }
 
       if (debugPointerRef.current) {
-        debugPointerRef.current.position.set(pinchX, pinchY, 0.05);
+        debugPointerRef.current.position.set(pinch.x, pinch.y, 0.05);
       }
 
       if (distA < 0.70) {
@@ -247,7 +425,7 @@ export const TherapyGame = ({ profile, onNavigate }) => {
       }
     }
 
-    const wrist = real[0];
+    const wrist = real?.[0] || phantom?.left?.[0] || phantom?.right?.[0];
     if (wrist) {
       const currentPos = new THREE.Vector3(wrist.x, wrist.y, wrist.z);
       if (!statsRef.current.startPos) {
@@ -267,10 +445,92 @@ export const TherapyGame = ({ profile, onNavigate }) => {
     setAmputationSide(side);
   }, []);
 
+  const startPoseRecording = useCallback(() => {
+    configRef.current.bilateralRecordingMode = true;
+    setRecordingStatus('Reference recording: a healthy person should show the full arm and hand, then record each pose.');
+    setGameState('recording');
+  }, []);
+
+  const recordPoseAction = useCallback(async (actionKey) => {
+    const snapshot = configRef.current.latestTrackingSnapshot;
+    if (!snapshot?.capturedAt || (performance.now() - snapshot.capturedAt) > 1600) {
+      setRecordingStatus('No fresh live tracking frame yet. Move your hand in view and try again.');
+      return;
+    }
+
+    const recorded = snapshotToRecordedPose(snapshot);
+    if (!recorded?.hand) {
+      setRecordingStatus('No hand detected yet. Hold the pose in view and try again.');
+      return;
+    }
+    if (!recorded.arms.LEFT.shoulder || !recorded.arms.RIGHT.shoulder) {
+      setRecordingStatus('Shoulders are not detected clearly yet. Step back a little and try again.');
+      return;
+    }
+
+    const next = { ...recordedPoseLibrary, [actionKey]: recorded };
+    localStorage.setItem(poseStorageKey, JSON.stringify(next));
+    localStorage.setItem(BILATERAL_POSE_STORAGE_KEY, JSON.stringify(next));
+    configRef.current.bilateralPoseLibrary = next;
+    setRecordedPoseLibrary(next);
+
+    const label = BILATERAL_RECORDING_ACTIONS.find((action) => action.key === actionKey)?.label || actionKey;
+    setRecordingStatus(`${label} saved locally. Syncing to database...`);
+    const saved = await savePoseLibraryToDatabase(next);
+    setRecordingStatus(saved
+      ? `${label} saved to database for future bilateral patient sessions.`
+      : `${label} saved locally, but database sync failed. It will still be available in this browser.`);
+  }, [poseStorageKey, recordedPoseLibrary, savePoseLibraryToDatabase]);
+
+  const finishPoseRecording = useCallback(() => {
+    configRef.current.bilateralRecordingMode = false;
+    setGameState('ready');
+    setRecordingStatus('');
+  }, []);
+
+  const hasRecordedBilateralLibrary = BILATERAL_RECORDING_ACTIONS.some(
+    (action) => recordedPoseLibrary[action.key]?.hand
+  );
+
+  const chooseBilateralPose = useCallback((actionKey) => {
+    const action = BILATERAL_POSE_ACTIONS.find((item) => item.key === actionKey);
+    if (!action) return;
+    configRef.current.bilateralActivePose = action.key;
+    setActiveBilateralPose(action.key);
+    window.dispatchEvent(new CustomEvent('phantomtouch:voice-command', { detail: { text: action.label } }));
+  }, []);
+
+  useEffect(() => {
+    const handlePoseCommand = (event) => {
+      const text = String(event?.detail?.text || '').toLowerCase();
+      const action = BILATERAL_POSE_ACTIONS.find((item) => {
+        if (item.key === 'open_hand') return /open|relax|flat/.test(text);
+        if (item.key === 'clench_fist') return /clench|clinch|fist|close/.test(text);
+        if (item.key === 'victory') return /victory|peace|v sign|two fingers/.test(text);
+        if (item.key === 'thumbs_up') return /thumb|thumbs up/.test(text);
+        if (item.key === 'point') return /point|pointing/.test(text);
+        if (item.key === 'pinch') return /pinch|pinching/.test(text);
+        return false;
+      });
+      if (!action) return;
+      configRef.current.bilateralActivePose = action.key;
+      setActiveBilateralPose(action.key);
+    };
+
+    window.addEventListener('phantomtouch:voice-command', handlePoseCommand);
+    return () => window.removeEventListener('phantomtouch:voice-command', handlePoseCommand);
+  }, []);
+
   const onLandmarksUpdate = useCallback((data) => {
     if (!data) return;
+    if (data.recordingSnapshot) {
+      const handCount = Number(Boolean(data.recordingSnapshot.leftHand)) + Number(Boolean(data.recordingSnapshot.rightHand));
+      setRecordingTrackingStatus(handCount > 0
+        ? `Live tracking: ${handCount} hand${handCount > 1 ? 's' : ''} detected`
+        : 'Live tracking: arms detected, waiting for hand landmarks');
+    }
     const { real, phantom } = data;
-    if (real && phantom) handleLandmarks(real, phantom);
+    if (real || phantom) handleLandmarks(real, phantom);
   }, [handleLandmarks]);
 
   useEffect(() => { landmarksHandlerRef.current = onLandmarksUpdate; });
@@ -390,9 +650,12 @@ export const TherapyGame = ({ profile, onNavigate }) => {
     sessionEndInProgressRef.current = false;
     statsRef.current = { hits: 0, spawned: practiceMode === 'game' ? 1 : 0, startTime: Date.now(), endTime: null, peakROM: 0, telemetry: [], startPos: null };
     configRef.current.hoverAccumMs = 0;
+    configRef.current.bilateralRecordingMode = false;
+    const duration = configRef.current.prescribedDuration || 120;
     setTargetsHit(0);
     setTargetsSpawned(practiceMode === 'game' ? 1 : 0);
-    setSecondsLeft(configRef.current.prescribedDuration || 120);
+    setSessionDuration(duration);
+    setSecondsLeft(duration);
     setHoverPct(0);
     setSessionSaved(null);
     setIsPaused(false);
@@ -400,9 +663,9 @@ export const TherapyGame = ({ profile, onNavigate }) => {
   }, [practiceMode]);
 
   useEffect(() => {
-    if (gameState !== 'running') return;
+    if (gameState !== 'running' && gameState !== 'recording') return;
     const scene = initThreeJS(canvasRef.current, containerRef.current);
-    if (practiceMode === 'game') {
+    if (gameState === 'running' && practiceMode === 'game') {
       const tA = makeTargetMesh(scene);
       const tB = makeTargetMesh(scene);
       spawnTargetPair(tA, tB, configRef);
@@ -484,10 +747,16 @@ export const TherapyGame = ({ profile, onNavigate }) => {
           <p style={{ marginTop: 10, opacity: 0.75, fontSize: '0.95rem' }}>
             Amputated side: <strong>{amputationSide}</strong>
           </p>
-          <p style={{ marginTop: 8, opacity: 0.8 }}>
-            Show your <strong>{amputationSide === 'LEFT' ? 'right' : 'left'}</strong> hand
-            to the camera — the phantom will appear on your <strong>{amputationSide.toLowerCase()}</strong> side.
-          </p>
+          {amputationSide === 'BILATERAL' ? (
+            <p style={{ marginTop: 8, opacity: 0.8 }}>
+              Record a pose library once, then say open hand, clench fist, or victory during therapy.
+            </p>
+          ) : (
+            <p style={{ marginTop: 8, opacity: 0.8 }}>
+              Show your <strong>{amputationSide === 'LEFT' ? 'right' : 'left'}</strong> hand
+              to the camera — the phantom will appear on your <strong>{amputationSide.toLowerCase()}</strong> side.
+            </p>
+          )}
           <div style={{ display: 'flex', gap: 14, justifyContent: 'center', marginTop: 28 }}>
             <button
               className="btn btn-secondary"
@@ -503,6 +772,15 @@ export const TherapyGame = ({ profile, onNavigate }) => {
             >
               ← Change Side
             </button>
+            {amputationSide === 'BILATERAL' && (
+              <button
+                className="btn btn-secondary"
+                style={{ padding: '10px 22px' }}
+                onClick={startPoseRecording}
+              >
+                {hasRecordedBilateralLibrary ? 'Update Pose Library' : 'Record Pose Library'}
+              </button>
+            )}
             <button className="btn btn-primary" style={{ padding: '12px 28px' }} onClick={startSession}>
               <PlayIcon className="w-5 h-5" /> {practiceMode === 'camera' ? 'Start Camera' : 'Start Game'}
             </button>
@@ -510,8 +788,82 @@ export const TherapyGame = ({ profile, onNavigate }) => {
         </div>
       )}
 
+      {gameState === 'recording' && (
+        <div className="game-split-layout mirror-session-shell">
+          <div className="game-hud-panel therapy-hud-compact">
+            <h2 style={{ fontSize: '1.25rem', fontWeight: 800, marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--accent-cyan)' }} />
+              Pose Library
+            </h2>
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '12px', fontWeight: 600 }}>
+              A healthy reference person should record one clean full-arm frame for each action.
+            </p>
+
+            <div className="glass-panel" style={{ padding: '20px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '20px' }}>
+              {BILATERAL_RECORDING_ACTIONS.map((action) => {
+                const isRecorded = Boolean(recordedPoseLibrary[action.key]?.hand);
+                return (
+                  <button
+                    key={action.key}
+                    type="button"
+                    className={isRecorded ? 'btn btn-secondary' : 'btn btn-primary'}
+                    style={{ width: '100%', justifyContent: 'center', padding: '10px 12px', minHeight: 44 }}
+                    onClick={() => recordPoseAction(action.key)}
+                  >
+                    {isRecorded ? 'Update' : 'Record'} {action.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="hud-alert-banner alert-success" style={{ marginTop: 16 }}>
+              <span className="bullet-dot" />
+              {recordingStatus || recordingTrackingStatus}
+            </div>
+
+            <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <button
+                className="btn btn-primary"
+                onClick={finishPoseRecording}
+                style={{ width: '100%', padding: '12px 16px' }}
+              >
+                Finish Recording
+              </button>
+              <button
+                className="btn btn-secondary"
+                onClick={() => {
+                  configRef.current.bilateralRecordingMode = false;
+                  setGameState('ready');
+                }}
+                style={{ width: '100%', padding: '10px 16px' }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+
+          <div className="game-stage-panel">
+            <video ref={videoRef} className="mirror-camera-feed" autoPlay playsInline muted
+              style={{
+                position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+                objectFit: 'contain', transform: 'scaleX(-1)', zIndex: 1
+              }} />
+
+            <div ref={containerRef} className="mirror-canvas-layer"
+              style={{
+                position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+                zIndex: 2, pointerEvents: 'none'
+              }}>
+              <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block' }} />
+            </div>
+
+            <div className="mirror-vignette" />
+          </div>
+        </div>
+      )}
+
       {gameState === 'running' && (() => {
-        const totalDuration = configRef.current.prescribedDuration || 120;
+        const totalDuration = sessionDuration || 120;
         const elapsedSeconds = totalDuration - secondsLeft;
 
         const formatMinSec = (sec) => {
@@ -532,7 +884,7 @@ export const TherapyGame = ({ profile, onNavigate }) => {
         return (
           <div className="game-split-layout mirror-session-shell">
             {/* Left Column: Vertical HUD Sidebar */}
-            <div className="game-hud-panel">
+            <div className="game-hud-panel therapy-hud-compact">
               <h2 style={{ fontSize: '1.25rem', fontWeight: 800, marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--accent-cyan)' }} />
                 {practiceMode === 'camera' ? 'Camera Mirror' : 'Therapy Game'}
@@ -711,6 +1063,43 @@ export const TherapyGame = ({ profile, onNavigate }) => {
                 </div>
               </div>
 
+              {amputationSide === 'BILATERAL' && (
+                <div className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '20px' }}>
+                  <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Pose Buttons</span>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                    {BILATERAL_POSE_ACTIONS.map((action) => {
+                      const hasPose = Boolean(recordedPoseLibrary[action.key]?.hand);
+                      const isActive = activeBilateralPose === action.key;
+                      return (
+                        <button
+                          key={action.key}
+                          type="button"
+                          className={isActive ? 'btn btn-primary' : 'btn btn-secondary'}
+                          onClick={() => chooseBilateralPose(action.key)}
+                          disabled={!hasPose}
+                          style={{
+                            width: '100%',
+                            justifyContent: 'center',
+                            padding: '9px 10px',
+                            minHeight: 40,
+                            fontSize: '0.86rem',
+                            opacity: hasPose ? 1 : 0.45,
+                          }}
+                        >
+                          {action.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {!hasRecordedBilateralLibrary && (
+                    <div className="hud-alert-banner alert-warning">
+                      <span className="bullet-dot" />
+                      Record pose library first
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Game Stats Info card */}
               <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {practiceMode === 'game' && (
@@ -807,7 +1196,7 @@ export const TherapyGame = ({ profile, onNavigate }) => {
             <button className="btn btn-primary"
               onClick={() => {
                 setGameState('ready');
-                setSecondsLeft(configRef.current.prescribedDuration || 120);
+                setSecondsLeft(sessionDuration || 120);
                 setAmputationSide(profile?.amputationSide || null);
                 setSessionSaved(null);
               }}>
