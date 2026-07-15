@@ -3,6 +3,7 @@ import axios from 'axios';
 import * as THREE from 'three';
 import { useMirrorEngine } from '../hooks/useMirrorEngine';
 import { PlayIcon } from './Icons';
+import { TherapySessionVoiceRecognition, THERAPY_VOICE_SCRIPTS, BILATERAL_POSE_LABELS, speakTherapyMessage } from '../utils/TherapySessionVoiceRecognition';
 
 function playSuccessChime() {
   try {
@@ -175,8 +176,8 @@ export const TherapyGame = ({ profile, onNavigate }) => {
     try {
       return JSON.parse(
         localStorage.getItem(getPoseStorageKey(patientId))
-          || localStorage.getItem(BILATERAL_POSE_STORAGE_KEY)
-          || '{}'
+        || localStorage.getItem(BILATERAL_POSE_STORAGE_KEY)
+        || '{}'
       );
     } catch {
       return {};
@@ -185,6 +186,8 @@ export const TherapyGame = ({ profile, onNavigate }) => {
   const [recordingStatus, setRecordingStatus] = useState('');
   const [activeBilateralPose, setActiveBilateralPose] = useState('open_hand');
   const [recordingTrackingStatus, setRecordingTrackingStatus] = useState('Waiting for camera tracking');
+  const [voiceEnabled, setVoiceEnabled] = useState(() => localStorage.getItem('therapyVoiceMode') !== 'false');
+  const [voiceStatus, setVoiceStatus] = useState('');
 
   // null = not yet chosen; 'LEFT' or 'RIGHT' = amputated side selected by user
   const [amputationSide, setAmputationSide] = useState(profile?.amputationSide || null);
@@ -192,6 +195,11 @@ export const TherapyGame = ({ profile, onNavigate }) => {
   const containerRef = useRef(null);
   const canvasRef = useRef(null);
   const videoRef = useRef(null);
+  const sessionVoiceRef = useRef(null);
+  const gameStateRef = useRef('ready');
+  const sessionEndInProgressRef = useRef(false);
+
+  useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
 
   const statsRef = useRef({
     hits: 0, spawned: 0, startTime: null, endTime: null,
@@ -235,9 +243,6 @@ export const TherapyGame = ({ profile, onNavigate }) => {
   const targetPairRef = useRef(null);
   const debugPointerRef = useRef(null);
   const particlesRef = useRef([]);
-  const gameStateRef = useRef('ready');
-  const sessionEndInProgressRef = useRef(false);
-  useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
 
   const patientId = profile?._id || profile?.id || null;
   const poseStorageKey = getPoseStorageKey(patientId);
@@ -277,8 +282,8 @@ export const TherapyGame = ({ profile, onNavigate }) => {
 
         const localLibrary = JSON.parse(
           localStorage.getItem(poseStorageKey)
-            || localStorage.getItem(BILATERAL_POSE_STORAGE_KEY)
-            || '{}'
+          || localStorage.getItem(BILATERAL_POSE_STORAGE_KEY)
+          || '{}'
         );
         if (hasPoseLibraryEntries(localLibrary)) {
           setRecordedPoseLibrary(localLibrary);
@@ -444,6 +449,67 @@ export const TherapyGame = ({ profile, onNavigate }) => {
     if (side !== null) configRef.current.amputationSide = side;
     setAmputationSide(side);
   }, []);
+
+  const handleSessionVoiceCommand = useCallback((command) => {
+    if (command === 'START_SESSION') {
+      startSession();
+    } else if (command === 'PAUSE_SESSION') {
+      setIsPaused(true);
+      speakTherapyMessage(THERAPY_VOICE_SCRIPTS.PAUSED);
+    } else if (command === 'RESUME_SESSION') {
+      setIsPaused(false);
+      speakTherapyMessage(THERAPY_VOICE_SCRIPTS.RESUMED);
+    } else if (command === 'END_SESSION') {
+      finishSession();
+    } else if (command === 'RAISE_HANDS') {
+      setVoiceStatus('Raise hands command received');
+    } else if (command === 'LOWER_HANDS') {
+      setVoiceStatus('Lower hands command received');
+    }
+  }, []);
+
+  const handleSessionPainLevel = useCallback((level) => {
+    setPainScore(level);
+    speakTherapyMessage(THERAPY_VOICE_SCRIPTS.PAIN_RECORDED.replace('{level}', level));
+  }, []);
+
+  const handleBilateralPoseChange = useCallback((poseKey) => {
+    setActiveBilateralPose(poseKey);
+    const poseLabel = BILATERAL_POSE_LABELS[poseKey] || poseKey;
+    speakTherapyMessage(THERAPY_VOICE_SCRIPTS.POSE_CHANGED.replace('{pose}', poseLabel));
+    setVoiceStatus(`Pose changed to ${poseLabel}`);
+  }, []);
+
+  const handleSessionVoiceError = useCallback((error) => {
+    setVoiceStatus(error);
+  }, []);
+
+  useEffect(() => {
+    if (gameState !== 'running' || !voiceEnabled) {
+      sessionVoiceRef.current?.stop();
+      return;
+    }
+
+    if (!sessionVoiceRef.current) {
+      sessionVoiceRef.current = new TherapySessionVoiceRecognition({
+        isBilateral: amputationSide === 'BILATERAL',
+        onCommand: handleSessionVoiceCommand,
+        onPainLevel: handleSessionPainLevel,
+        onPoseChange: handleBilateralPoseChange,
+        onError: handleSessionVoiceError,
+      });
+
+      sessionVoiceRef.current.start();
+      const script = amputationSide === 'BILATERAL'
+        ? THERAPY_VOICE_SCRIPTS.SESSION_STARTED_BILATERAL
+        : THERAPY_VOICE_SCRIPTS.SESSION_STARTED_UNILATERAL;
+      speakTherapyMessage(script);
+    }
+
+    return () => {
+      sessionVoiceRef.current?.stop();
+    };
+  }, [gameState, voiceEnabled, amputationSide, handleSessionVoiceCommand, handleSessionPainLevel, handleBilateralPoseChange, handleSessionVoiceError]);
 
   const startPoseRecording = useCallback(() => {
     configRef.current.bilateralRecordingMode = true;
@@ -634,8 +700,10 @@ export const TherapyGame = ({ profile, onNavigate }) => {
     sessionEndInProgressRef.current = true;
 
     setGameState('saving');
+    sessionVoiceRef.current?.stop();
     stopRenderLoop();
     destroy();
+    speakTherapyMessage(THERAPY_VOICE_SCRIPTS.SESSION_ENDING);
     setAccuracy(
       practiceMode === 'game' && statsRef.current.spawned > 0
         ? Math.round((statsRef.current.hits / statsRef.current.spawned) * 100)
@@ -643,6 +711,9 @@ export const TherapyGame = ({ profile, onNavigate }) => {
     );
     const saved = await saveSession();
     setSessionSaved(saved);
+    if (saved) {
+      speakTherapyMessage(THERAPY_VOICE_SCRIPTS.SESSION_SAVED);
+    }
     setGameState('finished');
   }, [destroy, practiceMode, stopRenderLoop, saveSession]);
 
@@ -660,7 +731,8 @@ export const TherapyGame = ({ profile, onNavigate }) => {
     setSessionSaved(null);
     setIsPaused(false);
     setGameState('running');
-  }, [practiceMode]);
+    localStorage.setItem('therapyVoiceMode', voiceEnabled ? 'true' : 'false');
+  }, [practiceMode, voiceEnabled]);
 
   useEffect(() => {
     if (gameState !== 'running' && gameState !== 'recording') return;
@@ -757,6 +829,21 @@ export const TherapyGame = ({ profile, onNavigate }) => {
               to the camera — the phantom will appear on your <strong>{amputationSide.toLowerCase()}</strong> side.
             </p>
           )}
+
+          {/* Voice Control Toggle */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginTop: '16px', padding: '12px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px' }}>
+            <input
+              type="checkbox"
+              id="voiceToggle"
+              checked={voiceEnabled}
+              onChange={(e) => setVoiceEnabled(e.target.checked)}
+              style={{ cursor: 'pointer', width: '18px', height: '18px' }}
+            />
+            <label htmlFor="voiceToggle" style={{ cursor: 'pointer', fontSize: '0.9rem', marginBottom: 0 }}>
+              🎤 Enable Voice Commands
+            </label>
+          </div>
+
           <div style={{ display: 'flex', gap: 14, justifyContent: 'center', marginTop: 28 }}>
             <button
               className="btn btn-secondary"
@@ -1061,6 +1148,21 @@ export const TherapyGame = ({ profile, onNavigate }) => {
                   <span className="bullet-dot" />
                   {isPaused ? 'Session paused' : 'Active tracking'}
                 </div>
+
+                {/* Voice Status Indicator */}
+                {voiceEnabled && voiceStatus && (
+                  <div className="hud-alert-banner" style={{ background: 'rgba(59, 130, 246, 0.15)', borderColor: 'rgba(59, 130, 246, 0.3)', color: 'var(--accent-blue)' }}>
+                    <span className="bullet-dot" style={{ backgroundColor: 'var(--accent-blue)' }} />
+                    {voiceStatus}
+                  </div>
+                )}
+
+                {voiceEnabled && !voiceStatus && (
+                  <div className="hud-alert-banner" style={{ background: 'rgba(139, 92, 246, 0.15)', borderColor: 'rgba(139, 92, 246, 0.3)', color: '#a78bfa' }}>
+                    <span className="bullet-dot" style={{ backgroundColor: '#a78bfa' }} />
+                    🎤 Voice active — Say pause, resume, or end
+                  </div>
+                )}
               </div>
 
               {amputationSide === 'BILATERAL' && (

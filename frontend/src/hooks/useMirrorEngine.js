@@ -8,8 +8,8 @@ import { HandModel3D } from '../utils/HandModel3D';
 //   15=L wrist     16=R wrist
 function getPoseIdx(side) {
   return side === 'LEFT'
-    ? { sh:11, el:13, wr:15 }
-    : { sh:12, el:14, wr:16 };
+    ? { sh: 11, el: 13, wr: 15 }
+    : { sh: 12, el: 14, wr: 16 };
 }
 
 const cloneLandmark = (lm) => lm ? { x: lm.x, y: lm.y, z: lm.z || 0, visibility: lm.visibility } : null;
@@ -50,11 +50,11 @@ const makeFallbackHand = (wrist, side) => {
 };
 
 export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
-  const sceneRef    = useRef(null);
-  const cameraRef   = useRef(null);
+  const sceneRef = useRef(null);
+  const cameraRef = useRef(null);
   const rendererRef = useRef(null);
-  const clockRef    = useRef(null);
-  const rafRef      = useRef(null);
+  const clockRef = useRef(null);
+  const rafRef = useRef(null);
 
   // renderVisible:false  → track coords, no 3D mesh (real/healthy hand)
   // renderVisible:true   → full 3D render (phantom hand)
@@ -65,35 +65,35 @@ export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
   const activeBilateralPoseRef = useRef('open_hand');
 
   const holisticRef = useRef(null);
-  const mpCamRef    = useRef(null);
-  const videoElRef  = useRef(null);  // stored at initMediaPipe time
+  const mpCamRef = useRef(null);
+  const videoElRef = useRef(null);  // stored at initMediaPipe time
 
-  const lastPoseRef   = useRef(null);
+  const lastPoseRef = useRef(null);
   const lastPoseMsRef = useRef(0);
   const POSE_PERSIST_MS = 500;
 
   const lastUiUpdateRef = useRef(0);
-  const UI_UPDATE_MS    = 60;
+  const UI_UPDATE_MS = 60;
 
   // ── Video rect: corrects for pillarboxing / letterboxing ─────────────────
   // The <video> uses object-fit:contain inside the Three.js canvas.
   // MediaPipe landmarks are in [0,1] video-space; we must remap them into
   // [0,1] viewport-space before unprojecting, otherwise edge positions are off.
   const getVideoRect = useCallback(() => {
-    const v  = videoElRef.current;
-    const r  = rendererRef.current;
+    const v = videoElRef.current;
+    const r = rendererRef.current;
     if (!v || !r) return null;
-    const cW = r.domElement.clientWidth  || window.innerWidth;
+    const cW = r.domElement.clientWidth || window.innerWidth;
     const cH = r.domElement.clientHeight || window.innerHeight;
     if (!cW || !cH) return null;
-    const vW = v.videoWidth  || 1280;
+    const vW = v.videoWidth || 1280;
     const vH = v.videoHeight || 720;
     if (!vW || !vH) return null;
     const va = vW / vH, ca = cW / cH;
     let rW, rH, oX, oY;
-    if (ca > va) { rH=cH; rW=cH*va; oX=(cW-rW)/2; oY=0; }
-    else         { rW=cW; rH=cW/va; oX=0; oY=(cH-rH)/2; }
-    return { renderedW:rW, renderedH:rH, offsetX:oX, offsetY:oY, containerW:cW, containerH:cH };
+    if (ca > va) { rH = cH; rW = cH * va; oX = (cW - rW) / 2; oY = 0; }
+    else { rW = cW; rH = cW / va; oX = 0; oY = (cH - rH) / 2; }
+    return { renderedW: rW, renderedH: rH, offsetX: oX, offsetY: oY, containerW: cW, containerH: cH };
   }, []);
 
   // ── Three.js init ─────────────────────────────────────────────────────────
@@ -102,7 +102,7 @@ export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
     const scene = new THREE.Scene();
     sceneRef.current = scene;
 
-    const camera = new THREE.PerspectiveCamera(72, w/h, 0.1, 100);
+    const camera = new THREE.PerspectiveCamera(72, w / h, 0.1, 100);
     camera.position.set(0, 0, 8);
     camera.updateProjectionMatrix();
     cameraRef.current = camera;
@@ -111,7 +111,7 @@ export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
     renderer.setSize(w, h);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     rendererRef.current = renderer;
 
     scene.add(new THREE.AmbientLight(0xffffff, 0.55));
@@ -129,8 +129,8 @@ export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
     clockRef.current = new THREE.Clock();
 
     const onResize = () => {
-      const nw=containerEl.clientWidth, nh=containerEl.clientHeight;
-      camera.aspect = nw/nh; camera.updateProjectionMatrix();
+      const nw = containerEl.clientWidth, nh = containerEl.clientHeight;
+      camera.aspect = nw / nh; camera.updateProjectionMatrix();
       renderer.setSize(nw, nh);
     };
     window.addEventListener('resize', onResize);
@@ -203,7 +203,7 @@ export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
       pose = lastPoseRef.current;
     else { hideArm(); return; }
 
-    const leftHand  = results.leftHandLandmarks  || null;
+    const leftHand = results.leftHandLandmarks || null;
     const rightHand = results.rightHandLandmarks || null;
     configRef.current.latestTrackingSnapshot = {
       pose: cloneLandmarks(pose),
@@ -295,11 +295,11 @@ export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
 
     // ── Stable side assignment (never re-detected mid-session) ────────────
     // amputationSide = the MISSING limb; healthySide = the one with a real hand
-    const ampSide     = configRef.current?.amputationSide === 'RIGHT' ? 'RIGHT' : 'LEFT';
+    const ampSide = configRef.current?.amputationSide === 'RIGHT' ? 'RIGHT' : 'LEFT';
     const healthySide = ampSide === 'RIGHT' ? 'LEFT' : 'RIGHT';
 
     const healthyIdx = getPoseIdx(healthySide);
-    const ampIdx     = getPoseIdx(ampSide);
+    const ampIdx = getPoseIdx(ampSide);
 
     // Phantom needs healthy shoulder/elbow/wrist refs for mirroring
     ampIdx.healthySh = healthyIdx.sh;
@@ -368,16 +368,16 @@ export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
       } catch (err) { console.warn('Camera API failed, trying getUserMedia:', err); }
 
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video:{width:1280,height:720}, audio:false });
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: false });
         videoEl.srcObject = stream;
-        await videoEl.play().catch(()=>{});
+        await videoEl.play().catch(() => { });
         let mid = null;
         const loop = async () => {
           if (videoEl && !videoEl.paused && videoEl.readyState >= 2)
             await holistic.send({ image: videoEl }).catch((e) => console.warn('skip', e));
           mid = requestAnimationFrame(loop);
         };
-        mpCamRef.current = { stop: () => { stream.getTracks().forEach(t=>t.stop()); if(mid) cancelAnimationFrame(mid); } };
+        mpCamRef.current = { stop: () => { stream.getTracks().forEach(t => t.stop()); if (mid) cancelAnimationFrame(mid); } };
         loop();
       } catch (e) { console.error('Camera fallback failed:', e); }
     };

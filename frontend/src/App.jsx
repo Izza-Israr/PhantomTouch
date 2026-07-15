@@ -29,7 +29,7 @@ function App() {
   const [dashboardView, setDashboardView] = useState('overview');
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
-  const [appVoiceEnabled, setAppVoiceEnabled] = useState(Boolean(localStorage.getItem('token')) || localStorage.getItem('voiceMode') === 'true');
+  const [appVoiceEnabled, setAppVoiceEnabled] = useState((Boolean(localStorage.getItem('token')) && localStorage.getItem('userRole') === 'PATIENT') || localStorage.getItem('voiceMode') === 'true');
   const appVoiceRecognitionRef = useRef(null);
   const appVoiceSpeakingRef = useRef(false);
   const appVoiceLastCommandRef = useRef('');
@@ -53,9 +53,12 @@ function App() {
       console.warn('Server logout call failed:', e);
     } finally {
       localStorage.removeItem('token');
+      localStorage.removeItem('userRole');
+      localStorage.removeItem('voiceMode');
       setToken('');
       setUser(null);
       setProfile(null);
+      setAppVoiceEnabled(false);
       setScreen('landing');
     }
   }, []);
@@ -78,6 +81,14 @@ function App() {
           setToken(storedToken);
           setUser(res.data.user);
           setProfile(res.data.profile);
+          localStorage.setItem('userRole', res.data.user.role);
+          if (res.data.user.role === 'PATIENT') {
+            localStorage.setItem('voiceMode', 'true');
+            setAppVoiceEnabled(true);
+          } else {
+            localStorage.setItem('voiceMode', 'false');
+            setAppVoiceEnabled(false);
+          }
           if (res.data.needsProfileSetup) {
             setScreen('profileSetup');
           } else {
@@ -97,17 +108,29 @@ function App() {
 
   const handleAuthSuccess = (newToken, newUser, newProfile) => {
     localStorage.setItem('token', newToken);
-    localStorage.setItem('voiceMode', 'true');
+    localStorage.setItem('userRole', newUser.role);
+    if (newUser.role === 'PATIENT') {
+      localStorage.setItem('voiceMode', 'true');
+      setAppVoiceEnabled(true);
+    } else {
+      localStorage.setItem('voiceMode', 'false');
+      setAppVoiceEnabled(false);
+    }
     setToken(newToken);
     setUser(newUser);
     setProfile(newProfile);
-    setAppVoiceEnabled(true);
     appVoiceWelcomeSpokenRef.current = false;
     setScreen('dashboard');
   };
 
   const handleGoogleNeedsProfile = (newToken, newUser, name) => {
     localStorage.setItem('token', newToken);
+    localStorage.setItem('userRole', newUser.role);
+    if (newUser.role === 'PATIENT') {
+      localStorage.setItem('voiceMode', 'true');
+    } else {
+      localStorage.setItem('voiceMode', 'false');
+    }
     setToken(newToken);
     setUser(newUser);
     setGoogleName(name || '');
@@ -117,8 +140,14 @@ function App() {
   const handleProfileComplete = (updatedUser, newProfile) => {
     setUser(updatedUser);
     setProfile(newProfile);
-    localStorage.setItem('voiceMode', 'true');
-    setAppVoiceEnabled(true);
+    localStorage.setItem('userRole', updatedUser.role);
+    if (updatedUser.role === 'PATIENT') {
+      localStorage.setItem('voiceMode', 'true');
+      setAppVoiceEnabled(true);
+    } else {
+      localStorage.setItem('voiceMode', 'false');
+      setAppVoiceEnabled(false);
+    }
     appVoiceWelcomeSpokenRef.current = false;
     setScreen('dashboard');
   };
@@ -261,6 +290,9 @@ function App() {
   useEffect(() => {
     if (!token || !user || screen === 'landing' || screen === 'login' || screen === 'register' || screen === 'profileSetup') return;
 
+    // Only enable voice mode for patients, not for clinicians
+    if (user?.role !== 'PATIENT') return;
+
     if (!appVoiceWelcomeSpokenRef.current) {
       appVoiceWelcomeSpokenRef.current = true;
       explainAppVoiceScript();
@@ -269,6 +301,15 @@ function App() {
 
   useEffect(() => {
     if (!token || !user || !appVoiceEnabled || screen === 'landing' || screen === 'login' || screen === 'register' || screen === 'profileSetup') {
+      if (appVoiceRecognitionRef.current) {
+        try { appVoiceRecognitionRef.current.stop(); } catch (e) { console.warn('Could not stop app voice recognition', e); }
+        appVoiceRecognitionRef.current = null;
+      }
+      return;
+    }
+
+    // Only enable voice recognition for patients
+    if (user?.role !== 'PATIENT') {
       if (appVoiceRecognitionRef.current) {
         try { appVoiceRecognitionRef.current.stop(); } catch (e) { console.warn('Could not stop app voice recognition', e); }
         appVoiceRecognitionRef.current = null;
@@ -330,15 +371,7 @@ function App() {
       appVoiceRecognitionRef.current = null;
       try { recognition.stop(); } catch (e) { console.warn('Could not clean up app voice recognition', e); }
     };
-  }, [appVoiceEnabled, explainAppVoiceScript, processAppVoiceCommand, profile?.amputationSide, screen, speakApp, token, user]);
-
-  if (checkingAuth) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: 'var(--bg-primary)' }}>
-        <p style={{ color: 'var(--text-secondary)' }}>Verifying active session credentials...</p>
-      </div>
-    );
-  }
+  }, [appVoiceEnabled, explainAppVoiceScript, processAppVoiceCommand, profile?.amputationSide, screen, speakApp, token, user?.role]);
 
   return (
     <>
@@ -381,13 +414,20 @@ function App() {
           {token ? (
             <>
               <div className="nav-links hidden-mobile" style={{ display: 'flex', gap: '8px' }}>
-                {[
-                  { id: 'overview', label: 'Dashboard' },
-                  { id: 'sessions', label: 'Therapy Sessions' },
-                  { id: 'statistics', label: 'Progress' },
-                  { id: 'reports', label: 'Reports' },
-                  { id: 'profile', label: 'Profile' }
-                ].map(tab => (
+                {(user?.role === 'PATIENT'
+                  ? [
+                    { id: 'overview', label: 'Dashboard' },
+                    { id: 'sessions', label: 'Therapy Sessions' },
+                    { id: 'statistics', label: 'Progress' },
+                    { id: 'reports', label: 'Reports' },
+                    { id: 'profile', label: 'Profile' }
+                  ]
+                  : [
+                    { id: 'overview', label: 'Dashboard' },
+                    { id: 'patients', label: 'Patients' },
+                    { id: 'profile', label: 'Profile' }
+                  ]
+                ).map(tab => (
                   <button
                     key={tab.id}
                     type="button"

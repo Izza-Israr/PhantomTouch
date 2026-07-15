@@ -4,23 +4,23 @@ import * as THREE from 'three';
 class AdaptiveFilter1D {
   constructor(minCutoff = 1.0, beta = 0.05, dCutoff = 1.0, hz = 30) {
     this.minCutoff = minCutoff;
-    this.beta      = beta;
-    this.dCutoff   = dCutoff;
-    this.hz        = hz;
-    this._x        = null;
-    this._dx       = 0;
+    this.beta = beta;
+    this.dCutoff = dCutoff;
+    this.hz = hz;
+    this._x = null;
+    this._dx = 0;
   }
   _alpha(cutoff) {
-    const te  = 1.0 / this.hz;
+    const te = 1.0 / this.hz;
     const tau = 1.0 / (2 * Math.PI * cutoff);
     return 1.0 / (1.0 + tau / te);
   }
   filter(x) {
     if (this._x === null) { this._x = x; return x; }
-    const dx   = (x - this._x) * this.hz;
-    this._dx   = this._dx + this._alpha(this.dCutoff) * (dx - this._dx);
+    const dx = (x - this._x) * this.hz;
+    this._dx = this._dx + this._alpha(this.dCutoff) * (dx - this._dx);
     const cutoff = this.minCutoff + this.beta * Math.abs(this._dx);
-    this._x    = this._x + this._alpha(cutoff) * (x - this._x);
+    this._x = this._x + this._alpha(cutoff) * (x - this._x);
     return this._x;
   }
   reset() { this._x = null; this._dx = 0; }
@@ -96,9 +96,9 @@ export function resolveAmputationSettingsForSide(configRef, side = null) {
 // ─── HandModel3D ─────────────────────────────────────────────────────────────
 export class HandModel3D {
   constructor(scene, configRef, color = 0x00ffff, options = {}) {
-    this.scene     = scene;
+    this.scene = scene;
     this.configRef = configRef;
-    this.options   = options;
+    this.options = options;
 
     this.group = new THREE.Group();
     this.scene.add(this.group);
@@ -109,35 +109,35 @@ export class HandModel3D {
 
     // 21 hand joints + 3 structural nodes (Shoulder=21, Elbow=22, Wrist=23)
     this.jointCount = 24;
-    this.jointMesh  = new THREE.InstancedMesh(this.jointGeo, this.jointMat, this.jointCount);
+    this.jointMesh = new THREE.InstancedMesh(this.jointGeo, this.jointMat, this.jointCount);
     this.jointMesh.frustumCulled = false;
     this.group.add(this.jointMesh);
 
     this._dummy = new THREE.Object3D();
 
     this.smoothedPositions = Array.from({ length: this.jointCount }, () => new THREE.Vector3());
-    this.filters    = Array.from({ length: this.jointCount }, () => new AdaptiveFilter3D(1.2, 0.08));
-    this.lastValidMs  = new Array(this.jointCount).fill(0);
-    this.initialised  = new Array(this.jointCount).fill(false);
-    this.PERSIST_MS   = 450;
+    this.filters = Array.from({ length: this.jointCount }, () => new AdaptiveFilter3D(1.2, 0.08));
+    this.lastValidMs = new Array(this.jointCount).fill(0);
+    this.initialised = new Array(this.jointCount).fill(false);
+    this.PERSIST_MS = 450;
     this.JUMP_THRESHOLD = 1.8;
     this.TARGET_Z = 0.0;
 
     this.connections = [
       [21, 22], [22, 23],
-      [23, 0],  [23, 5],  [23, 17],
-      [0, 1],   [1, 2],   [2, 3],   [3, 4],
-      [0, 5],   [5, 6],   [6, 7],   [7, 8],
-      [5, 9],   [9, 10],  [10, 11], [11, 12],
-      [9, 13],  [13, 14], [14, 15], [15, 16],
-      [0, 17],  [17, 18], [18, 19], [19, 20],
+      [23, 0], [23, 5], [23, 17],
+      [0, 1], [1, 2], [2, 3], [3, 4],
+      [0, 5], [5, 6], [6, 7], [7, 8],
+      [5, 9], [9, 10], [10, 11], [11, 12],
+      [9, 13], [13, 14], [14, 15], [15, 16],
+      [0, 17], [17, 18], [18, 19], [19, 20],
     ];
 
     this.linePositionsArray = new Float32Array(this.connections.length * 2 * 3);
-    this.lineGeometry       = new THREE.BufferGeometry();
+    this.lineGeometry = new THREE.BufferGeometry();
     this.lineGeometry.setAttribute('position', new THREE.BufferAttribute(this.linePositionsArray, 3));
     this.lineMaterial = new THREE.LineBasicMaterial({ color, linewidth: 2, transparent: true, opacity: 0.75 });
-    this.line         = new THREE.LineSegments(this.lineGeometry, this.lineMaterial);
+    this.line = new THREE.LineSegments(this.lineGeometry, this.lineMaterial);
     this.line.frustumCulled = false;
     this.group.add(this.line);
 
@@ -164,16 +164,16 @@ export class HandModel3D {
     }
 
     const screenX = 1.0 - vpX;
-    const ndcX    = screenX * 2.0 - 1.0;
-    const ndcY    = 1.0 - vpY * 2.0;
+    const ndcX = screenX * 2.0 - 1.0;
+    const ndcY = 1.0 - vpY * 2.0;
 
     this._ndcVec.set(ndcX, ndcY, 0.5);
     this._ndcVec.unproject(camera);
 
-    const dir  = this._ndcVec.sub(this._camPos).normalize();
+    const dir = this._ndcVec.sub(this._camPos).normalize();
     const dist = (this.TARGET_Z - this._camPos.z) / dir.z;
-    const wx   = this._camPos.x + dir.x * dist;
-    const wy   = this._camPos.y + dir.y * dist;
+    const wx = this._camPos.x + dir.x * dist;
+    const wy = this._camPos.y + dir.y * dist;
 
     return new THREE.Vector3(wx, wy, this.TARGET_Z);
   }
@@ -187,7 +187,7 @@ export class HandModel3D {
       this.filters[idx].fz._x = targetWorld.z;
       current.copy(targetWorld);
       this.initialised[idx] = true;
-      this.lastValidMs[idx]  = now;
+      this.lastValidMs[idx] = now;
       return;
     }
 
