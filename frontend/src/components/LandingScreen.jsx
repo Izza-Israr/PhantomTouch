@@ -202,7 +202,7 @@ export const LandingScreen = ({ onNavigate }) => {
 
         <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', justifyContent: 'center' }}>
           <button className="btn btn-primary" onClick={() => onNavigate('login')} style={{ padding: '12px 28px', fontSize: '1rem' }}>
-            <PlayIcon className="w-5 h-5" /> Start Therapy Session
+            Start Therapy Session
           </button>
           <button className="btn btn-secondary" onClick={() => onNavigate('register')} style={{ padding: '12px 28px', fontSize: '1rem' }}>
             Sign Up as Clinician
@@ -210,67 +210,7 @@ export const LandingScreen = ({ onNavigate }) => {
         </div>
       </section>
 
-      {/* Stats Section */}
-      <section className="landing-stats" style={{ position: 'relative', zIndex: 1 }}>
-        <div className="landing-stat-item" ref={stat1.ref}>
-          <div className="landing-stat-number stat-purple">{stat1.count}M+</div>
-          <div className="landing-stat-label">Amputees Worldwide</div>
-        </div>
-        <div className="landing-stat-item" ref={stat2.ref}>
-          <div className="landing-stat-number stat-cyan">{stat2.count}%</div>
-          <div className="landing-stat-label">Pain Reduction Reported</div>
-        </div>
-        <div className="landing-stat-item" ref={stat3.ref}>
-          <div className="landing-stat-number stat-green">$0</div>
-          <div className="landing-stat-label">Hardware Required</div>
-        </div>
-      </section>
-
-      {/* Feature Cards Grid */}
-      <section className="stagger-fade-in" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '24px', marginBottom: '80px', position: 'relative', zIndex: 1 }}>
-
-        {/* The Problem */}
-        <div className="glass-panel glass-panel-glow-purple p-8 feature-card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <div className="feature-icon" style={{ width: '52px', height: '52px', borderRadius: '14px', background: 'var(--accent-purple-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent-purple)' }}>
-            <AwardIcon className="w-6 h-6" />
-          </div>
-          <h2 style={{ fontSize: '1.4rem', fontFamily: 'var(--font-display)' }}>The Problem</h2>
-          <p style={{ color: 'var(--text-secondary)', lineHeight: '1.7', fontSize: '0.93rem' }}>
-            Following limb loss, the brain continues sending "move" commands to the missing arm. Lacking visual confirmation, the neural feedback loop misfires — translating into severe phantom pain.
-          </p>
-          <p style={{ color: 'var(--text-secondary)', lineHeight: '1.7', fontSize: '0.93rem' }}>
-            Existing 2D mirror apps fail because flat reflections warp when a patient turns. Physical mirrors are bulky, and clinics lack remote tracking.
-          </p>
-        </div>
-
-        {/* The Science */}
-        <div className="glass-panel glass-panel-glow-cyan p-8 feature-card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <div className="feature-icon" style={{ width: '52px', height: '52px', borderRadius: '14px', background: 'var(--accent-cyan-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent-cyan)' }}>
-            <ActivityIcon className="w-6 h-6" />
-          </div>
-          <h2 style={{ fontSize: '1.4rem', fontFamily: 'var(--font-display)' }}>Scientific Validation</h2>
-          <p style={{ color: 'var(--text-secondary)', lineHeight: '1.7', fontSize: '0.93rem' }}>
-            Studies in the <strong>New England Journal of Medicine</strong> confirm that daily Mirror Therapy significantly lowers pain intensity by tricking the motor cortex into "seeing" the missing limb move.
-          </p>
-          <p style={{ color: 'var(--text-secondary)', lineHeight: '1.7', fontSize: '0.93rem' }}>
-            Our 3D model translates webcam input, mirrors coordinates, and renders a realistic ghost limb matching wrist rotations for immersive neural correction.
-          </p>
-        </div>
-
-        {/* The Business */}
-        <div className="glass-panel p-8 feature-card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <div className="feature-icon" style={{ width: '52px', height: '52px', borderRadius: '14px', background: 'var(--surface-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-primary)' }}>
-            <HospitalIcon className="w-6 h-6" />
-          </div>
-          <h2 style={{ fontSize: '1.4rem', fontFamily: 'var(--font-display)' }}>Telerehabilitation B2B</h2>
-          <p style={{ color: 'var(--text-secondary)', lineHeight: '1.7', fontSize: '0.93rem' }}>
-            The global telerehabilitation market is valued at $6-7 billion in 2026 and growing at 13-15% annually.
-          </p>
-          <p style={{ color: 'var(--text-secondary)', lineHeight: '1.7', fontSize: '0.93rem' }}>
-            <strong>Monetization:</strong> Free for patients at home. Premium B2B dashboard suite licensed to hospitals and physiotherapists for remote diagnostics and session audits.
-          </p>
-        </div>
-      </section>
+      
 
       {/* Tech Stack */}
       <section style={{ textAlign: 'center', padding: '60px 40px', background: 'var(--bg-secondary)', borderRadius: '24px', border: '1px solid var(--border-color)', marginBottom: '60px', position: 'relative', zIndex: 1 }}>

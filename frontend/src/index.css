@@ -803,6 +803,7 @@ label {
 }
 
 @media (max-width: 1180px) {
+
   .dashboard-session-notes-grid,
   .dashboard-practice-grid {
     grid-template-columns: 1fr;
@@ -912,8 +913,8 @@ label {
   margin: 24px 0;
 }
 
-.dashboard-session-notes-grid > :only-child,
-.dashboard-practice-grid > :only-child {
+.dashboard-session-notes-grid> :only-child,
+.dashboard-practice-grid> :only-child {
   grid-column: 1 / -1;
 }
 
@@ -1858,8 +1859,15 @@ label {
 }
 
 @keyframes authBrandPulse {
-  0% { opacity: 0.4; transform: scale(1); }
-  100% { opacity: 0.7; transform: scale(1.05); }
+  0% {
+    opacity: 0.4;
+    transform: scale(1);
+  }
+
+  100% {
+    opacity: 0.7;
+    transform: scale(1.05);
+  }
 }
 
 .auth-brand-content {
@@ -1887,8 +1895,13 @@ label {
 }
 
 @keyframes gradientShift {
-  0% { background-position: 0% center; }
-  100% { background-position: 200% center; }
+  0% {
+    background-position: 0% center;
+  }
+
+  100% {
+    background-position: 200% center;
+  }
 }
 
 .auth-brand-content p {
@@ -2277,9 +2290,17 @@ label {
 }
 
 @keyframes heroGradient {
-  0% { background-position: 0% center; }
-  50% { background-position: 100% center; }
-  100% { background-position: 0% center; }
+  0% {
+    background-position: 0% center;
+  }
+
+  50% {
+    background-position: 100% center;
+  }
+
+  100% {
+    background-position: 0% center;
+  }
 }
 
 /* Floating orbs behind hero */
@@ -2325,26 +2346,57 @@ label {
 }
 
 @keyframes orbFloat {
-  0%, 100% { opacity: 0.3; transform: translate(0, 0) scale(1); }
-  25% { opacity: 0.5; transform: translate(15px, -20px) scale(1.08); }
-  50% { opacity: 0.4; transform: translate(-10px, 10px) scale(1.04); }
-  75% { opacity: 0.55; transform: translate(8px, 15px) scale(1.1); }
+
+  0%,
+  100% {
+    opacity: 0.3;
+    transform: translate(0, 0) scale(1);
+  }
+
+  25% {
+    opacity: 0.5;
+    transform: translate(15px, -20px) scale(1.08);
+  }
+
+  50% {
+    opacity: 0.4;
+    transform: translate(-10px, 10px) scale(1.04);
+  }
+
+  75% {
+    opacity: 0.55;
+    transform: translate(8px, 15px) scale(1.1);
+  }
 }
 
 /* Stagger fade-in for landing cards */
-.stagger-fade-in > * {
+.stagger-fade-in>* {
   opacity: 0;
   transform: translateY(24px);
   animation: staggerItem 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-.stagger-fade-in > *:nth-child(1) { animation-delay: 0.1s; }
-.stagger-fade-in > *:nth-child(2) { animation-delay: 0.2s; }
-.stagger-fade-in > *:nth-child(3) { animation-delay: 0.3s; }
-.stagger-fade-in > *:nth-child(4) { animation-delay: 0.4s; }
+.stagger-fade-in>*:nth-child(1) {
+  animation-delay: 0.1s;
+}
+
+.stagger-fade-in>*:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.stagger-fade-in>*:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+.stagger-fade-in>*:nth-child(4) {
+  animation-delay: 0.4s;
+}
 
 @keyframes staggerItem {
-  to { opacity: 1; transform: translateY(0); }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* Feature card hover glow */
@@ -2540,17 +2592,79 @@ label {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 18px;
+  padding: 10px 22px;
   border-radius: 50px;
-  background: var(--accent-purple-dim);
-  border: 1px solid rgba(139, 92, 246, 0.25);
-  color: var(--accent-purple);
+
+  background: rgba(56, 214, 244, 0.12);
+  border: 1px solid rgba(56, 214, 244, 0.35);
+
+  color: #38D6F4;
+
   font-size: 0.85rem;
   font-weight: 600;
   transition: var(--transition-smooth);
 }
 
 .hero-badge:hover {
-  border-color: rgba(139, 92, 246, 0.4);
-  background: rgba(139, 92, 246, 0.12);
+  background: rgba(56, 214, 244, 0.18);
+  border-color: rgba(56, 214, 244, 0.55);
+}
+
+/* Responsive tweaks to prevent layout distortion on small screens */
+@media (max-width: 900px) {
+  .landing-hero-bg {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .landing-orb-1 {
+    width: 220px;
+    height: 220px;
+    top: -80px;
+    left: 6%;
+    filter: blur(56px);
+  }
+
+  .landing-orb-2 {
+    width: 180px;
+    height: 180px;
+    bottom: -50px;
+    right: 8%;
+    filter: blur(48px);
+  }
+
+  .landing-orb-3 {
+    width: 140px;
+    height: 140px;
+    top: 36%;
+    right: 3%;
+    filter: blur(40px);
+  }
+
+  .landing-cta {
+    padding: 40px 20px;
+    margin-bottom: 36px;
+    border-radius: 18px;
+  }
+
+  .landing-stats {
+    grid-template-columns: 1fr;
+    gap: 14px;
+    padding: 28px 0;
+  }
+
+  .landing-stat-number {
+    font-size: 2rem;
+  }
+
+  .hero-badge {
+    padding: 7px 14px;
+    font-size: 0.82rem;
+  }
+}
+
+@media (max-width: 420px) {
+  .landing-orb { display: none; }
+  .landing-cta { padding: 28px 14px; }
+  .hero-gradient-text { font-size: clamp(2rem, 8vw, 2.6rem); }
 }

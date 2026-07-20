@@ -95,23 +95,36 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
   }, [onUpdateProfile, profile]);
 
   const tableRef = useRef(null);
+  const progressRef = useRef(null);
 
-  const exportReport = async () => {
+  const exportSectionAsPDF = async (element, filenamePrefix, orientation = 'landscape') => {
+    if (!element) {
+      alert('Nothing to export yet.');
+      return;
+    }
     try {
-      const el = document.querySelector('.session-table');
-      if (!el) return alert('No session table to export');
-      const canvas = await html2canvas(el, { scale: 2 });
+      const canvas = await html2canvas(element, { scale: 2 });
       const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF('landscape', 'pt', 'a4');
+      const pdf = new jsPDF(orientation, 'pt', 'a4');
       const imgProps = pdf.getImageProperties(imgData);
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
       pdf.addImage(imgData, 'PNG', 0, 20, pdfWidth, pdfHeight);
-      pdf.save(`phantomtouch_sessions_${new Date().toISOString().slice(0, 10)}.pdf`);
+      pdf.save(`${filenamePrefix}_${new Date().toISOString().slice(0, 10)}.pdf`);
     } catch (err) {
-      console.error('Export PDF error:', err);
+      console.error(`Export PDF error (${filenamePrefix}):`, err);
       alert('Failed to export PDF');
     }
+  };
+
+  const exportReport = async () => {
+    const el = document.querySelector('.session-table');
+    if (!el) return alert('No session table to export');
+    await exportSectionAsPDF(el, 'phantomtouch_sessions', 'landscape');
+  };
+
+  const exportProgress = async () => {
+    await exportSectionAsPDF(progressRef.current, 'phantomtouch_progress', 'portrait');
   };
 
   const startPracticeMode = (mode) => {
@@ -746,24 +759,34 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
 
       {view === 'statistics' && (
         <>
-          {/* Circular progress cards (Image 2 style) */}
-          <section className="circular-metric-grid">
-            <CircularProgressCard value={dailyStreak ? `${dailyStreak}` : '—'} label="Daily Streak" sublabel="days" percentage={dailyStreak ? Math.min(100, dailyStreak) : 0} strokeColor="var(--warning)" />
-            <CircularProgressCard value={typeof totalRuns === 'number' ? totalRuns : '—'} label="Sessions" sublabel="total" percentage={totalRuns ? Math.min(100, totalRuns) : 0} strokeColor="var(--accent-cyan)" />
-            <CircularProgressCard value={painReductionPercent !== null ? `${painReductionPercent}%` : '—'} label="Pain Relief" sublabel="previous" percentage={painReductionPercent !== null ? Math.min(100, Math.max(0, painReductionPercent)) : 0} strokeColor={painReductionPercent !== null && painReductionPercent < 0 ? 'var(--error)' : 'var(--success)'} />
-            <CircularProgressCard value={avgAccuracy !== null ? `${Math.min(100, avgAccuracy + 3)}` : '--'} label="Score" sublabel="/100" percentage={avgAccuracy !== null ? Math.min(100, avgAccuracy + 3) : 0} strokeColor="var(--accent-cyan)" />
-          </section>
+          <div ref={progressRef}>
+            {/* Circular progress cards (Image 2 style) */}
+            <section className="circular-metric-grid">
+              <CircularProgressCard value={dailyStreak ? `${dailyStreak}` : '—'} label="Daily Streak" sublabel="days" percentage={dailyStreak ? Math.min(100, dailyStreak) : 0} strokeColor="var(--warning)" />
+              <CircularProgressCard value={typeof totalRuns === 'number' ? totalRuns : '—'} label="Sessions" sublabel="total" percentage={totalRuns ? Math.min(100, totalRuns) : 0} strokeColor="var(--accent-cyan)" />
+              <CircularProgressCard value={painReductionPercent !== null ? `${painReductionPercent}%` : '—'} label="Pain Relief" sublabel="previous" percentage={painReductionPercent !== null ? Math.min(100, Math.max(0, painReductionPercent)) : 0} strokeColor={painReductionPercent !== null && painReductionPercent < 0 ? 'var(--error)' : 'var(--success)'} />
+              <CircularProgressCard value={avgAccuracy !== null ? `${Math.min(100, avgAccuracy + 3)}` : '--'} label="Score" sublabel="/100" percentage={avgAccuracy !== null ? Math.min(100, avgAccuracy + 3) : 0} strokeColor="var(--accent-cyan)" />
+            </section>
 
-          <section style={{ marginTop: '24px' }}>
-            <div className="clinical-card-title" style={{ marginBottom: '18px' }}>
-              <h3 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Performance Statistics</h3>
-              <span className="clinical-eyebrow">Clinical outcomes</span>
-            </div>
-            <div className="chart-grid">
-              <PremiumLineChart data={sessions.length ? sessions : displaySessions} yField="accuracyPercentage" title="Accuracy" stroke="var(--accent-cyan)" suffix="%" />
-              <PremiumLineChart data={sessions.length ? sessions : displaySessions} yField="peakRangeOfMotionDegrees" title="Range of Motion" stroke="var(--success)" suffix="deg" />
-            </div>
-          </section>
+            <section style={{ marginTop: '24px' }}>
+              <div className="clinical-card-title" style={{ marginBottom: '18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <h3 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Performance Statistics</h3>
+                  <span className="clinical-eyebrow">Clinical outcomes</span>
+                </div>
+                <button className="btn btn-secondary" onClick={exportProgress} style={{ padding: '8px 16px', fontSize: '0.85rem', borderRadius: '10px' }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+                  </svg>
+                  Export Progress
+                </button>
+              </div>
+              <div className="chart-grid">
+                <PremiumLineChart data={sessions.length ? sessions : displaySessions} yField="accuracyPercentage" title="Accuracy" stroke="var(--accent-cyan)" suffix="%" />
+                <PremiumLineChart data={sessions.length ? sessions : displaySessions} yField="peakRangeOfMotionDegrees" title="Range of Motion" stroke="var(--success)" suffix="deg" />
+              </div>
+            </section>
+          </div>
         </>
       )}
 
@@ -777,9 +800,17 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
           </section>
 
           <section className="glass-panel clinical-card" style={{ padding: '24px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', marginTop: '24px' }}>
-            <div className="clinical-card-title" style={{ marginBottom: '20px' }}>
-              <h3 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Clinical Diagnostic Report</h3>
-              <span className="clinical-eyebrow" style={{ color: 'var(--accent-cyan)' }}>SaaS Audit</span>
+            <div className="clinical-card-title" style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h3 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Clinical Diagnostic Report</h3>
+                <span className="clinical-eyebrow" style={{ color: 'var(--accent-cyan)' }}>SaaS Audit</span>
+              </div>
+              <button className="btn btn-secondary" onClick={exportReport} style={{ padding: '8px 16px', fontSize: '0.85rem', borderRadius: '10px' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+                Export Report
+              </button>
             </div>
             <p style={{ color: 'var(--text-secondary)', lineHeight: '1.6', marginBottom: '20px' }}>
               This diagnostic report summarizes performance logs, daily streak history, and range of motion milestones.
