@@ -65,6 +65,9 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
   });
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
+  const [patientDetail, setPatientDetail] = useState(null);
+  const [doctorEmailInput, setDoctorEmailInput] = useState('');
+  const [doctorLookupState, setDoctorLookupState] = useState({ status: 'idle', message: '' });
 
   const formatToPakistanTime = useCallback((value, options = {}) => {
     if (!value) return '';
@@ -74,6 +77,17 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
       ...options
     });
   }, []);
+
+  const fetchPatientDetail = useCallback(async () => {
+    if (!profile?._id) return;
+    try {
+      const config = { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } };
+      const res = await axios.get(`http://localhost:5000/api/patients/${profile._id}`, config);
+      setPatientDetail(res.data);
+    } catch (err) {
+      console.error('Failed to load patient detail:', err);
+    }
+  }, [profile?._id]);
 
   const fetchDashboardData = useCallback(async () => {
     setLoading(true);
@@ -87,12 +101,14 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
 
       const sessionsRes = await axios.get(`http://localhost:5000/api/sessions/patient/${profile._id}`, config);
       setSessions(sessionsRes.data);
+
+      await fetchPatientDetail();
     } catch (err) {
       console.error('Failed to load patient dashboard data:', err);
     } finally {
       setLoading(false);
     }
-  }, [onUpdateProfile, profile]);
+  }, [onUpdateProfile, profile, fetchPatientDetail]);
 
   const tableRef = useRef(null);
   const progressRef = useRef(null);
@@ -130,6 +146,46 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
   const startPracticeMode = (mode) => {
     sessionStorage.setItem('phantomtouchPracticeMode', mode);
     onNavigate('game');
+  };
+
+  const handleAddDoctor = async (e) => {
+    e.preventDefault();
+    const email = doctorEmailInput.trim();
+    if (!email) {
+      setDoctorLookupState({ status: 'error', message: 'Enter a doctor email first.' });
+      return;
+    }
+
+    setDoctorLookupState({ status: 'loading', message: 'Looking up doctor...' });
+    try {
+      const config = { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } };
+
+      const lookupRes = await axios.get(
+        `http://localhost:5000/api/patients/lookup-clinician?email=${encodeURIComponent(email)}`,
+        config
+      );
+
+      if (!lookupRes.data?.found) {
+        setDoctorLookupState({ status: 'error', message: 'No doctor account found with that email.' });
+        return;
+      }
+
+      await axios.put(`http://localhost:5000/api/patients/${profile._id}`, {
+        assignedClinicianId: lookupRes.data.clinicianId
+      }, config);
+
+      setDoctorLookupState({ status: 'success', message: `Dr. ${lookupRes.data.fullName} has been added.` });
+      setDoctorEmailInput('');
+      await fetchPatientDetail();
+    } catch (err) {
+      const serverMessage = err.response?.data?.message;
+      if (err.response?.status === 404) {
+        setDoctorLookupState({ status: 'error', message: 'No doctor account found with that email.' });
+      } else {
+        setDoctorLookupState({ status: 'error', message: serverMessage || 'Could not add doctor. Try again.' });
+      }
+      console.error('Add doctor error:', err);
+    }
   };
 
   useEffect(() => {
@@ -677,84 +733,147 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
       )}
 
       {view === 'profile' && (
-        <section className="glass-panel clinical-card profile-panel" style={{ maxWidth: 760, margin: '24px auto', background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
-          <div className="clinical-card-title" style={{ marginBottom: '24px' }}>
-            <h3 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Profile Details</h3>
-            <span className="clinical-eyebrow">Patient settings</span>
-          </div>
-          <form className="profile-form" onSubmit={handleSaveProfile} style={{ gap: '20px' }}>
-            <div>
-              <label htmlFor="profile-name">Full Name</label>
-              <input id="profile-name" value={profileForm.fullName} onChange={e => setProfileForm(prev => ({ ...prev, fullName: e.target.value }))} />
+        <>
+          <section className="glass-panel clinical-card profile-panel" style={{ maxWidth: 760, margin: '24px auto 20px', background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
+            <div className="clinical-card-title" style={{ marginBottom: '16px' }}>
+              <h3 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Assigned Doctor</h3>
+              <span className="clinical-eyebrow">Who's overseeing your therapy</span>
             </div>
-            <div>
-              <label htmlFor="profile-side">Amputation Side</label>
-              <select id="profile-side" value={profileForm.amputationSide} onChange={e => setProfileForm(prev => ({ ...prev, amputationSide: e.target.value }))}>
-                <option value="LEFT">Left Side</option>
-                <option value="RIGHT">Right Side</option>
-                <option value="BILATERAL">Bilateral</option>
-              </select>
-            </div>
-            <div style={{ gridColumn: '1 / -1' }}>
-              <label htmlFor="profile-level">Amputation Level</label>
-              <select id="profile-level" value={profileForm.amputationLevel} onChange={e => setProfileForm(prev => ({ ...prev, amputationLevel: e.target.value }))} disabled={profileForm.amputationSide === 'BILATERAL'}>
-                <option value="TRANSRADIAL">Transradial</option>
-                <option value="TRANSHUMERAL">Transhumeral</option>
-                <option value="WRIST_DISARTICULATION">Wrist Disarticulation</option>
-                <option value="FINGER_AMPUTATION">Fingers Only</option>
-              </select>
-            </div>
-            {profileForm.amputationSide === 'BILATERAL' && (
-              <div style={{ gridColumn: '1 / -1', border: '1px solid var(--border-color)', borderRadius: 14, padding: 16, background: 'var(--bg-primary)' }}>
-                <h4 style={{ marginBottom: 12 }}>Bilateral Settings</h4>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <div>
-                    <label htmlFor="profile-left-level">Left Side Level</label>
-                    <select id="profile-left-level" value={profileForm.leftAmputationLevel} onChange={e => setProfileForm(prev => ({ ...prev, leftAmputationLevel: e.target.value }))}>
-                      <option value="TRANSRADIAL">Transradial</option>
-                      <option value="TRANSHUMERAL">Transhumeral</option>
-                      <option value="WRIST_DISARTICULATION">Wrist Disarticulation</option>
-                      <option value="FINGER_AMPUTATION">Fingers Only</option>
-                    </select>
+
+            {patientDetail?.assignedClinician?.fullName ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 16px', borderRadius: '14px', background: 'var(--bg-primary)', border: '1px solid var(--border-color)' }}>
+                <div style={{ width: '38px', height: '38px', borderRadius: '50%', backgroundColor: 'var(--accent-cyan-dim)', color: 'var(--accent-cyan)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800 }}>
+                  Dr
+                </div>
+                <div>
+                  <strong style={{ display: 'block', fontSize: '1rem' }}>Dr. {patientDetail.assignedClinician.fullName}</strong>
+                  {patientDetail.assignedClinician.medicalSpecialty && (
+                    <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>{patientDetail.assignedClinician.medicalSpecialty}</span>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 16px', borderRadius: '14px', background: 'var(--bg-primary)', border: '1px solid var(--border-color)', marginBottom: '16px' }}>
+                  <div style={{ width: '38px', height: '38px', borderRadius: '50%', backgroundColor: 'var(--surface-muted)', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800 }}>
+                    —
                   </div>
                   <div>
-                    <label htmlFor="profile-right-level">Right Side Level</label>
-                    <select id="profile-right-level" value={profileForm.rightAmputationLevel} onChange={e => setProfileForm(prev => ({ ...prev, rightAmputationLevel: e.target.value }))}>
-                      <option value="TRANSRADIAL">Transradial</option>
-                      <option value="TRANSHUMERAL">Transhumeral</option>
-                      <option value="WRIST_DISARTICULATION">Wrist Disarticulation</option>
-                      <option value="FINGER_AMPUTATION">Fingers Only</option>
-                    </select>
+                    <strong style={{ display: 'block', fontSize: '1rem' }}>Self</strong>
+                    <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>No doctor assigned yet</span>
                   </div>
                 </div>
-                {profileForm.leftAmputationLevel === 'FINGER_AMPUTATION' && (
-                  <div style={{ marginTop: 14 }}>
-                    <label>Left Missing Fingers</label>
-                    {renderFingerSelector('leftMissingFingers')}
-                  </div>
+
+                <form onSubmit={handleAddDoctor} style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                  <input
+                    type="email"
+                    placeholder="Doctor's email address"
+                    value={doctorEmailInput}
+                    onChange={(e) => setDoctorEmailInput(e.target.value)}
+                    style={{ flex: '1 1 240px' }}
+                  />
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    disabled={doctorLookupState.status === 'loading'}
+                    style={{ padding: '10px 20px' }}
+                  >
+                    {doctorLookupState.status === 'loading' ? 'Checking...' : 'Add Doctor'}
+                  </button>
+                </form>
+
+                {doctorLookupState.message && (
+                  <p style={{
+                    marginTop: '10px',
+                    fontSize: '0.85rem',
+                    color: doctorLookupState.status === 'error' ? 'var(--error, #e53e3e)' : 'var(--accent-cyan)'
+                  }}>
+                    {doctorLookupState.message}
+                  </p>
                 )}
-                {profileForm.rightAmputationLevel === 'FINGER_AMPUTATION' && (
-                  <div style={{ marginTop: 14 }}>
-                    <label>Right Missing Fingers</label>
-                    {renderFingerSelector('rightMissingFingers')}
-                  </div>
-                )}
-              </div>
+              </>
             )}
-            {profileForm.amputationSide !== 'BILATERAL' && profileForm.amputationLevel === 'FINGER_AMPUTATION' && (
-              <div style={{ gridColumn: '1 / -1' }}>
-                <label>Missing Fingers</label>
-                {renderFingerSelector('missingFingers')}
-              </div>
-            )}
-            <div className="profile-actions" style={{ marginTop: '10px' }}>
-              <button type="submit" className="btn btn-primary" disabled={savingProfile} style={{ padding: '12px 24px' }}>
-                {savingProfile ? 'Saving...' : 'Save Profile'}
-              </button>
-              {profileSaved && <span><CheckIcon className="w-5 h-5" /> Saved</span>}
+          </section>
+
+          <section className="glass-panel clinical-card profile-panel" style={{ maxWidth: 760, margin: '0 auto 24px', background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
+            <div className="clinical-card-title" style={{ marginBottom: '24px' }}>
+              <h3 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Profile Details</h3>
+              <span className="clinical-eyebrow">Patient settings</span>
             </div>
-          </form>
-        </section>
+            <form className="profile-form" onSubmit={handleSaveProfile} style={{ gap: '20px' }}>
+              <div>
+                <label htmlFor="profile-name">Full Name</label>
+                <input id="profile-name" value={profileForm.fullName} onChange={e => setProfileForm(prev => ({ ...prev, fullName: e.target.value }))} />
+              </div>
+              <div>
+                <label htmlFor="profile-side">Amputation Side</label>
+                <select id="profile-side" value={profileForm.amputationSide} onChange={e => setProfileForm(prev => ({ ...prev, amputationSide: e.target.value }))}>
+                  <option value="LEFT">Left Side</option>
+                  <option value="RIGHT">Right Side</option>
+                  <option value="BILATERAL">Bilateral</option>
+                </select>
+              </div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label htmlFor="profile-level">Amputation Level</label>
+                <select id="profile-level" value={profileForm.amputationLevel} onChange={e => setProfileForm(prev => ({ ...prev, amputationLevel: e.target.value }))} disabled={profileForm.amputationSide === 'BILATERAL'}>
+                  <option value="TRANSRADIAL">Transradial</option>
+                  <option value="TRANSHUMERAL">Transhumeral</option>
+                  <option value="WRIST_DISARTICULATION">Wrist Disarticulation</option>
+                  <option value="FINGER_AMPUTATION">Fingers Only</option>
+                </select>
+              </div>
+              {profileForm.amputationSide === 'BILATERAL' && (
+                <div style={{ gridColumn: '1 / -1', border: '1px solid var(--border-color)', borderRadius: 14, padding: 16, background: 'var(--bg-primary)' }}>
+                  <h4 style={{ marginBottom: 12 }}>Bilateral Settings</h4>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <div>
+                      <label htmlFor="profile-left-level">Left Side Level</label>
+                      <select id="profile-left-level" value={profileForm.leftAmputationLevel} onChange={e => setProfileForm(prev => ({ ...prev, leftAmputationLevel: e.target.value }))}>
+                        <option value="TRANSRADIAL">Transradial</option>
+                        <option value="TRANSHUMERAL">Transhumeral</option>
+                        <option value="WRIST_DISARTICULATION">Wrist Disarticulation</option>
+                        <option value="FINGER_AMPUTATION">Fingers Only</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label htmlFor="profile-right-level">Right Side Level</label>
+                      <select id="profile-right-level" value={profileForm.rightAmputationLevel} onChange={e => setProfileForm(prev => ({ ...prev, rightAmputationLevel: e.target.value }))}>
+                        <option value="TRANSRADIAL">Transradial</option>
+                        <option value="TRANSHUMERAL">Transhumeral</option>
+                        <option value="WRIST_DISARTICULATION">Wrist Disarticulation</option>
+                        <option value="FINGER_AMPUTATION">Fingers Only</option>
+                      </select>
+                    </div>
+                  </div>
+                  {profileForm.leftAmputationLevel === 'FINGER_AMPUTATION' && (
+                    <div style={{ marginTop: 14 }}>
+                      <label>Left Missing Fingers</label>
+                      {renderFingerSelector('leftMissingFingers')}
+                    </div>
+                  )}
+                  {profileForm.rightAmputationLevel === 'FINGER_AMPUTATION' && (
+                    <div style={{ marginTop: 14 }}>
+                      <label>Right Missing Fingers</label>
+                      {renderFingerSelector('rightMissingFingers')}
+                    </div>
+                  )}
+                </div>
+              )}
+              {profileForm.amputationSide !== 'BILATERAL' && profileForm.amputationLevel === 'FINGER_AMPUTATION' && (
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label>Missing Fingers</label>
+                  {renderFingerSelector('missingFingers')}
+                </div>
+              )}
+              <div className="profile-actions" style={{ marginTop: '10px' }}>
+                <button type="submit" className="btn btn-primary" disabled={savingProfile} style={{ padding: '12px 24px' }}>
+                  {savingProfile ? 'Saving...' : 'Save Profile'}
+                </button>
+                {profileSaved && <span><CheckIcon className="w-5 h-5" /> Saved</span>}
+              </div>
+            </form>
+          </section>
+        </>
       )}
 
       {view === 'statistics' && (

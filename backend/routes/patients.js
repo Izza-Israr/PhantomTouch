@@ -184,6 +184,58 @@ router.post('/', auth, async (req, res) => {
   }
 });
 
+// Look up a clinician by email — used when a patient wants to link a doctor.
+// Registered BEFORE '/:id' on purpose: Express would otherwise match
+// '/lookup-clinician' as if "lookup-clinician" were an :id value.
+// Only returns non-sensitive fields, and only matches real CLINICIAN accounts.
+router.get('/lookup-clinician', auth, async (req, res) => {
+  try {
+    const email = String(req.query.email || '').trim().toLowerCase();
+    if (!email) {
+      return res.status(400).json({ message: 'Email is required' });
+    }
+
+    const { data: clinicianUser, error: userError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', email)
+      .eq('role', 'CLINICIAN')
+      .maybeSingle();
+
+    if (userError) {
+      console.error('Clinician email lookup error:', userError);
+      return res.status(500).json({ message: 'Failed to look up doctor' });
+    }
+    if (!clinicianUser) {
+      return res.status(404).json({ found: false, message: 'No doctor account found with that email' });
+    }
+
+    const { data: clinician, error: clinicianError } = await supabase
+      .from('clinicians')
+      .select('id, full_name, medical_specialty')
+      .eq('user_id', clinicianUser.id)
+      .maybeSingle();
+
+    if (clinicianError) {
+      console.error('Clinician profile lookup error:', clinicianError);
+      return res.status(500).json({ message: 'Failed to look up doctor' });
+    }
+    if (!clinician) {
+      return res.status(404).json({ found: false, message: 'No doctor account found with that email' });
+    }
+
+    res.json({
+      found: true,
+      clinicianId: clinician.id,
+      fullName: clinician.full_name,
+      medicalSpecialty: clinician.medical_specialty || null
+    });
+  } catch (error) {
+    console.error('Clinician lookup error:', error);
+    res.status(500).json({ message: 'Failed to look up doctor' });
+  }
+});
+
 // Get detailed view of specific patient
 router.get('/:id', auth, async (req, res) => {
   try {
@@ -328,7 +380,36 @@ router.put('/:id', auth, async (req, res) => {
     if (voiceModePreferred !== undefined) updates.voice_mode_preferred = Boolean(voiceModePreferred);
     if (skinToneSliderHex) updates.skin_tone_slider_hex = skinToneSliderHex;
     if (meshScaleMultiplier !== undefined) updates.mesh_scale_multiplier = Number(meshScaleMultiplier);
-    if (assignedClinicianId && req.user.role === 'ADMIN') updates.assigned_clinician_id = assignedClinicianId;
+
+    if (assignedClinicianId) {
+      if (req.user.role === 'ADMIN') {
+        updates.assigned_clinician_id = assignedClinicianId;
+      } else if (req.user.role === 'PATIENT' && patient.user_id === req.user.id) {
+        // Patients may self-assign a doctor only if they don't already have one.
+        // Changing an existing assignment is left to the clinician/admin side,
+        // so a patient can't silently swap doctors on their own.
+        if (patient.assigned_clinician_id) {
+          return res.status(400).json({ message: 'You already have an assigned doctor. Contact your clinic to change it.' });
+        }
+        // Re-verify server-side that this id is a real clinician, regardless of
+        // what the client claims — the /lookup-clinician step is for UX, this is
+        // what actually protects the write.
+        const { data: clinicianExists, error: clinicianCheckError } = await supabase
+          .from('clinicians')
+          .select('id')
+          .eq('id', assignedClinicianId)
+          .maybeSingle();
+
+        if (clinicianCheckError) {
+          console.error('Clinician verification error:', clinicianCheckError);
+          return res.status(500).json({ message: 'Failed to verify doctor' });
+        }
+        if (!clinicianExists) {
+          return res.status(400).json({ message: 'Doctor not found' });
+        }
+        updates.assigned_clinician_id = assignedClinicianId;
+      }
+    }
 
     const { data: updatedPatient, error: updateError } = await supabase
       .from('patients')
