@@ -1,13 +1,18 @@
 import { useCallback, useState, useEffect } from 'react';
 import axios from 'axios';
 import { PremiumLineChart } from './DashboardCharts';
-import { PlusIcon, UserIcon, ActivityIcon, ClockIcon, AwardIcon, CheckIcon, ChevronRightIcon } from './Icons';
+import { PlusIcon, UserIcon, CheckIcon, ChevronRightIcon } from './Icons';
 
 export const ClinicianDashboard = ({ user, profile, theme, onToggleTheme, view }) => {
   const [patients, setPatients] = useState([]);
+  // Sessions aren't included in GET /api/patients, so we fetch them separately
+  // per patient and key them here by patient id — this is what actually makes
+  // "session runs" counts real instead of always reading undefined.
+  const [patientSessionsMap, setPatientSessionsMap] = useState({});
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [selectedPatientSessions, setSelectedPatientSessions] = useState([]);
   const [selectedPatientPrescription, setSelectedPatientPrescription] = useState(null);
+  const [modalTab, setModalTab] = useState('progress');
   const [showAddForm, setShowAddForm] = useState(false);
   const [newEmail, setNewEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -27,7 +32,23 @@ export const ClinicianDashboard = ({ user, profile, theme, onToggleTheme, view }
     try {
       const config = { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } };
       const res = await axios.get('http://localhost:5000/api/patients', config);
-      setPatients(res.data);
+      const patientList = res.data || [];
+      setPatients(patientList);
+
+      // GET /api/patients doesn't return session data, so pull each patient's
+      // sessions separately and store them keyed by patient id.
+      const entries = await Promise.all(
+        patientList.map(async (pat) => {
+          try {
+            const sRes = await axios.get(`http://localhost:5000/api/sessions/patient/${pat._id}`, config);
+            return [pat._id, sRes.data || []];
+          } catch (err) {
+            console.error(`Failed to load sessions for patient ${pat._id}:`, err);
+            return [pat._id, []];
+          }
+        })
+      );
+      setPatientSessionsMap(Object.fromEntries(entries));
     } catch (err) {
       console.error('Failed to fetch patients list:', err);
     } finally {
@@ -39,9 +60,12 @@ export const ClinicianDashboard = ({ user, profile, theme, onToggleTheme, view }
     fetchPatients();
   }, [fetchPatients]);
 
-  const handleSelectPatient = async (patient) => {
+  const handleSelectPatient = async (patient, tab = 'progress') => {
     setSelectedPatient(patient);
-    setSelectedPatientSessions([]);
+    setModalTab(tab);
+    // Show cached session data immediately so the modal isn't empty while the
+    // fresh request is in flight.
+    setSelectedPatientSessions(patientSessionsMap[patient._id] || []);
     setSelectedPatientPrescription(null);
     setRxSuccess(false);
 
@@ -57,6 +81,8 @@ export const ClinicianDashboard = ({ user, profile, theme, onToggleTheme, view }
       setSpawnRadius(rxRes.data?.targetSpawnRadius || 2.0);
       setDwellTime(rxRes.data?.requiredHoverDwellTimeMs || 1000);
       setSelectedPatientSessions(sessionsRes.data);
+      // Keep the cached map fresh too, so the patient list count stays correct.
+      setPatientSessionsMap((prev) => ({ ...prev, [patient._id]: sessionsRes.data }));
     } catch (err) {
       console.error('Failed to load patient detail data:', err);
     }
@@ -126,10 +152,85 @@ export const ClinicianDashboard = ({ user, profile, theme, onToggleTheme, view }
     ? Math.max(...selectedPatientSessions.map(s => s.peakRangeOfMotionDegrees || 0))
     : 0;
 
-  const totalPatientMinutes = patients.reduce((acc, p) => {
-    const patMinutes = (p._sessions || []).reduce((sum, s) => sum + (s.totalDurationSeconds || 0), 0) / 60;
-    return acc + patMinutes;
-  }, 0);
+  // Real, derived from actual session data — used to fill the overview with
+  // something genuine instead of a broken/invented stat.
+  const recentlyActivePatients = patients
+    .map((pat) => {
+      const sessions = patientSessionsMap[pat._id] || [];
+      const lastSession = sessions.reduce((latest, s) => {
+        const t = s.startTime ? new Date(s.startTime).getTime() : 0;
+        return t > latest ? t : latest;
+      }, 0);
+      return { patient: pat, sessionCount: sessions.length, lastSessionTime: lastSession };
+    })
+    .filter((entry) => entry.lastSessionTime > 0)
+    .sort((a, b) => b.lastSessionTime - a.lastSessionTime)
+    .slice(0, 5);
+
+  const formatShortDate = (isoString) => {
+    if (!isoString) return '';
+    return new Date(isoString).toLocaleString('en-US', {
+      timeZone: 'Asia/Karachi',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    });
+  };
+
+  const formatShortTime = (isoString) => {
+    if (!isoString) return '';
+    return new Date(isoString).toLocaleString('en-US', {
+      timeZone: 'Asia/Karachi',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
+  };
+
+  const formatDurationMinSec = (sec) => {
+    const total = sec || 0;
+    const m = String(Math.floor(total / 60)).padStart(2, '0');
+    const s = String(total % 60).padStart(2, '0');
+    return `${m}:${s}`;
+  };
+
+  const getPainBadgeStyle = (painLevel) => {
+    const isDark = theme === 'dark';
+    if (painLevel === null || painLevel === undefined) {
+      return { background: 'transparent', color: 'var(--text-muted)', padding: '4px 10px', borderRadius: '99px', fontSize: '0.78rem', fontWeight: '700', display: 'inline-block' };
+    }
+    if (painLevel <= 4) {
+      return {
+        background: isDark ? 'rgba(245, 158, 11, 0.15)' : '#fffbeb',
+        color: isDark ? '#fbbf24' : '#d97706',
+        border: isDark ? '1px solid rgba(245, 158, 11, 0.2)' : '1px solid #fde68a',
+        padding: '4px 10px', borderRadius: '99px', fontSize: '0.78rem', fontWeight: '700', display: 'inline-block'
+      };
+    }
+    return {
+      background: isDark ? 'rgba(239, 68, 68, 0.15)' : '#fff5f5',
+      color: isDark ? '#f87171' : '#e53e3e',
+      border: isDark ? '1px solid rgba(239, 68, 68, 0.2)' : '1px solid #fecaca',
+      padding: '4px 10px', borderRadius: '99px', fontSize: '0.78rem', fontWeight: '700', display: 'inline-block'
+    };
+  };
+
+  const renderReportRows = (sessions) => sessions.map((session, index) => {
+    const isCameraSession = session.sessionType === 'CAMERA';
+    const score = isCameraSession ? null : (session.accuracyPercentage != null ? Math.min(100, Math.round(session.accuracyPercentage * 1.02 + 1)) : null);
+    return (
+      <tr key={session._id || session.id || index}>
+        <td>{formatShortDate(session.startTime)}</td>
+        <td style={{ color: 'var(--text-muted)' }}>{formatShortTime(session.startTime)}</td>
+        <td>{isCameraSession ? 'Camera' : 'Game'}</td>
+        <td>{formatDurationMinSec(session.totalDurationSeconds)}</td>
+        <td>{isCameraSession ? '—' : (session.targetsHit != null ? `${session.targetsHit}/${session.targetsSpawned ?? '--'}` : '—')}</td>
+        <td style={{ color: 'var(--accent-cyan)' }}>{isCameraSession ? '—' : (session.accuracyPercentage != null ? `${session.accuracyPercentage}%` : '—')}</td>
+        <td><span style={getPainBadgeStyle(session.painLevel)}>{session.painLevel != null ? `${session.painLevel}/10` : 'Not set'}</span></td>
+        <td>{score === null ? <span style={{ color: 'var(--text-muted)' }}>—</span> : <strong>{score}</strong>}</td>
+      </tr>
+    );
+  });
 
   if (loading) {
     return (
@@ -142,10 +243,21 @@ export const ClinicianDashboard = ({ user, profile, theme, onToggleTheme, view }
   return (
     <div className="clinical-dashboard animate-fade-in" style={{ padding: '40px 32px', maxWidth: '1440px', margin: '0 auto', position: 'relative' }}>
 
+      {/* STATUS ROW — matches patient dashboard styling */}
+      <div className="dashboard-status-row" style={{ display: 'flex', gap: '10px', marginBottom: '24px' }}>
+        <div className="status-pill status-active">
+          <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: 'var(--accent-cyan)' }} />
+          {patients.length} Patient{patients.length === 1 ? '' : 's'} Under Care
+        </div>
+        <div className="status-pill status-date">
+          {new Date().toLocaleString('en-US', { timeZone: 'Asia/Karachi', weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} PST
+        </div>
+      </div>
+
       {/* HEADER SECTION */}
       <section className="clinical-toolbar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '36px', borderBottom: '1px solid var(--border-color)', paddingBottom: '24px' }}>
         <div>
-          <span className="clinical-eyebrow" style={{ textTransform: 'uppercase', fontSize: '11px', letterSpacing: '1px', color: 'var(--accent-purple)', fontWeight: 700 }}>Clinician command center</span>
+          <span className="clinical-eyebrow" style={{ textTransform: 'uppercase', fontSize: '11px', letterSpacing: '1px', color: 'var(--accent-cyan)', fontWeight: 700 }}>Clinician command center</span>
           <h2 className="clinical-title" style={{ margin: '6px 0 4px 0', fontSize: '32px', fontWeight: '800', letterSpacing: '-0.5px' }}>Clinician Dashboard</h2>
           <p className="clinical-subtitle" style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '14px' }}>
             Welcome, <strong style={{ color: 'var(--text-primary)' }}>{profile?.fullName || user?.email || 'Therapist'}</strong>. Manage your clinic patient list and monitor session outcomes.
@@ -165,27 +277,77 @@ export const ClinicianDashboard = ({ user, profile, theme, onToggleTheme, view }
       {/* DASHBOARD OVERVIEW SECTION */}
       {(!view || view === 'overview') && (
         <>
-          {/* TWO TOP METRIC BOXES */}
-          <section className="metric-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '40px' }}>
-            <div className="glass-panel metric-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', padding: '32px', borderRadius: '16px', textAlign: 'center', minHeight: '180px' }}>
-              <div className="metric-icon" style={{ background: 'var(--accent-purple-dim)', color: 'var(--accent-purple)', width: '48px', height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '12px' }}>
-                <UserIcon style={{ width: '22px', height: '22px' }} />
+          {/* Hero-style panel, matching the patient dashboard's gradient hero block */}
+          <div className="glass-panel" style={{
+            padding: '40px',
+            background: 'linear-gradient(135deg, var(--bg-secondary) 0%, var(--surface-muted) 100%)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '24px',
+            marginBottom: '28px',
+            boxShadow: 'var(--shadow-lg)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '24px'
+          }}>
+            <div>
+              <div style={{
+                display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '50px',
+                background: 'var(--accent-cyan-dim)', color: 'var(--accent-cyan)', fontSize: '0.82rem', fontWeight: 750,
+                textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '14px'
+              }}>
+                <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'currentColor' }} />
+                Clinic Overview
               </div>
-              <div>
-                <span style={{ display: 'block', fontSize: '13px', color: 'var(--text-secondary)', fontWeight: 500, marginBottom: '4px' }}>Patients Enrolled</span>
-                <strong style={{ fontSize: '36px', fontWeight: '800', lineHeight: 1 }}>{patients.length}</strong>
-              </div>
+              <h2 style={{ fontSize: '2rem', fontWeight: 800, lineHeight: 1.15, color: 'var(--text-primary)', letterSpacing: '-0.02em', margin: 0 }}>
+                Monitoring <span style={{ color: 'var(--accent-cyan)' }}>{patients.length}</span> patient{patients.length === 1 ? '' : 's'} in your care
+              </h2>
             </div>
-            <div className="glass-panel metric-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', padding: '32px', borderRadius: '16px', textAlign: 'center', minHeight: '180px' }}>
-              <div className="metric-icon" style={{ background: 'var(--success-glow)', color: 'var(--success)', width: '48px', height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '12px' }}>
-                <ActivityIcon style={{ width: '22px', height: '22px' }} />
-              </div>
-              <div>
-                <span style={{ display: 'block', fontSize: '13px', color: 'var(--text-secondary)', fontWeight: 500, marginBottom: '4px' }}>Total Practice Hours</span>
-                <strong style={{ fontSize: '36px', fontWeight: '800', lineHeight: 1 }}>{Math.round(totalPatientMinutes / 60)}</strong>
-              </div>
+            <div style={{ width: '110px', height: '110px', borderRadius: '50%', backgroundColor: 'var(--accent-cyan-dim)', color: 'var(--accent-cyan)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <strong style={{ fontSize: '2.2rem', fontWeight: 800, lineHeight: 1 }}>{patients.length}</strong>
+              <span style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase' }}>Patients</span>
             </div>
-          </section>
+          </div>
+
+          {/* Recently active patients — real data, not a fabricated stat */}
+          <div className="glass-panel clinical-card" style={{ padding: '24px', background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
+            <div className="clinical-card-title" style={{ marginBottom: '18px' }}>
+              <h3 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Recently Active Patients</h3>
+              <span className="clinical-eyebrow">Most recent therapy sessions</span>
+            </div>
+
+            {recentlyActivePatients.length === 0 ? (
+              <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                No sessions logged yet across your patients.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {recentlyActivePatients.map(({ patient, sessionCount, lastSessionTime }) => (
+                  <div key={patient._id} style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px',
+                    padding: '14px 16px', borderRadius: '14px', background: 'var(--bg-primary)', border: '1px solid var(--border-color)'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: 0 }}>
+                      <div style={{ width: '38px', height: '38px', borderRadius: '50%', backgroundColor: 'var(--accent-cyan-dim)', color: 'var(--accent-cyan)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <UserIcon style={{ width: '18px', height: '18px' }} />
+                      </div>
+                      <div style={{ minWidth: 0 }}>
+                        <strong style={{ display: 'block', fontSize: '0.95rem' }}>{patient.fullName}</strong>
+                        <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                          {sessionCount} session{sessionCount === 1 ? '' : 's'} · last on {formatShortDate(new Date(lastSessionTime).toISOString())}
+                        </span>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                      <button className="btn btn-secondary" onClick={() => handleSelectPatient(patient, 'progress')} style={{ padding: '8px 14px', fontSize: '0.8rem', borderRadius: '10px' }}>View Progress</button>
+                      <button className="btn btn-secondary" onClick={() => handleSelectPatient(patient, 'reports')} style={{ padding: '8px 14px', fontSize: '0.8rem', borderRadius: '10px' }}>View Reports</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </>
       )}
 
@@ -233,60 +395,81 @@ export const ClinicianDashboard = ({ user, profile, theme, onToggleTheme, view }
                 </div>
               ) : (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '24px' }}>
-                  {patients.map((pat) => (
-                    <div
-                      key={pat._id}
-                      onClick={() => handleSelectPatient(pat)}
-                      className="glass-panel patient-grid-card"
-                      style={{
-                        padding: '28px',
-                        borderRadius: '16px',
-                        border: '1px solid var(--border-color)',
-                        background: 'var(--bg-card)',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.01)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'space-between',
-                        minHeight: '150px',
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.borderColor = 'var(--accent-purple)';
-                        e.currentTarget.style.transform = 'translateY(-2px)';
-                        e.currentTarget.style.boxShadow = '0 8px 24px rgba(6, 182, 212, 0.25)';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.borderColor = 'var(--border-color)';
-                        e.currentTarget.style.transform = 'translateY(0)';
-                        e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.01)';
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-                          <div style={{ background: 'rgba(6, 182, 212, 0.25)', color: 'var(--accent-purple)', padding: '12px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <UserIcon style={{ width: '24px', height: '24px' }} />
+                  {patients.map((pat) => {
+                    const patSessions = patientSessionsMap[pat._id] || [];
+                    return (
+                      <div
+                        key={pat._id}
+                        onClick={() => handleSelectPatient(pat, 'progress')}
+                        className="glass-panel patient-grid-card"
+                        style={{
+                          padding: '28px',
+                          borderRadius: '16px',
+                          border: '1px solid var(--border-color)',
+                          background: 'var(--bg-card)',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                          boxShadow: '0 4px 12px rgba(0,0,0,0.01)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          justifyContent: 'space-between',
+                          minHeight: '150px',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = 'var(--accent-cyan)';
+                          e.currentTarget.style.transform = 'translateY(-2px)';
+                          e.currentTarget.style.boxShadow = '0 8px 24px rgba(6, 182, 212, 0.25)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = 'var(--border-color)';
+                          e.currentTarget.style.transform = 'translateY(0)';
+                          e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.01)';
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+                            <div style={{ background: 'var(--accent-cyan-dim)', color: 'var(--accent-cyan)', padding: '12px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              <UserIcon style={{ width: '24px', height: '24px' }} />
+                            </div>
+                            <div>
+                              <strong style={{ display: 'block', fontSize: '20px', fontWeight: '800', color: 'var(--text-primary)', marginBottom: '4px' }}>
+                                {pat.fullName}
+                              </strong>
+                              <span style={{ fontSize: '13px', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                                {pat.amputationSide} | {pat.amputationLevel}
+                              </span>
+                            </div>
                           </div>
-                          <div>
-                            <strong style={{ display: 'block', fontSize: '20px', fontWeight: '800', color: 'var(--text-primary)', marginBottom: '4px' }}>
-                              {pat.fullName}
+                          <ChevronRightIcon style={{ width: '22px', height: '22px', color: 'var(--text-muted)' }} />
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '24px', paddingTop: '16px', borderTop: '1px solid var(--border-color)', flexWrap: 'wrap', gap: '12px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <span style={{ fontSize: '12px', textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.5px', fontWeight: 600 }}>Session Logs</span>
+                            <strong style={{ fontSize: '13px', color: 'var(--accent-cyan)', background: 'var(--accent-cyan-dim)', padding: '4px 12px', borderRadius: '12px', fontWeight: 700 }}>
+                              {patSessions.length} run{patSessions.length === 1 ? '' : 's'}
                             </strong>
-                            <span style={{ fontSize: '13px', color: 'var(--text-secondary)', fontWeight: 500 }}>
-                              {pat.amputationSide} | {pat.amputationLevel}
-                            </span>
+                          </div>
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <button
+                              className="btn btn-secondary"
+                              onClick={(e) => { e.stopPropagation(); handleSelectPatient(pat, 'progress'); }}
+                              style={{ padding: '8px 14px', fontSize: '0.8rem', borderRadius: '10px' }}
+                            >
+                              View Progress
+                            </button>
+                            <button
+                              className="btn btn-secondary"
+                              onClick={(e) => { e.stopPropagation(); handleSelectPatient(pat, 'reports'); }}
+                              style={{ padding: '8px 14px', fontSize: '0.8rem', borderRadius: '10px' }}
+                            >
+                              View Reports
+                            </button>
                           </div>
                         </div>
-                        <ChevronRightIcon style={{ width: '22px', height: '22px', color: 'var(--text-muted)' }} />
                       </div>
-
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '24px', paddingTop: '16px', borderTop: '1px solid var(--border-color)' }}>
-                        <span style={{ fontSize: '12px', textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.5px', fontWeight: 600 }}>Session Logs</span>
-                        <strong style={{ fontSize: '13px', color: 'var(--accent-purple)', background: 'var(--accent-purple-dim)', padding: '4px 12px', borderRadius: '12px', fontWeight: 700 }}>
-                          {pat._sessions?.length || 0} runs
-                        </strong>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -297,7 +480,7 @@ export const ClinicianDashboard = ({ user, profile, theme, onToggleTheme, view }
       {/* PROFILE SECTION */}
       {view === 'profile' && (
         <div className="profile-view animate-fade-in" style={{ width: '100%' }}>
-          <div className="glass-panel clinical-card" style={{ padding: '32px', borderRadius: '16px', marginBottom: '32px' }}>
+          <div className="glass-panel clinical-card" style={{ padding: '32px', borderRadius: '16px' }}>
             <h3 style={{ fontSize: '20px', fontWeight: '800', margin: '0 0 24px 0', color: 'var(--text-primary)' }}>Clinician Profile</h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '24px' }}>
               <div style={{ padding: '24px', background: 'rgba(0,0,0,0.02)', borderRadius: '12px' }}>
@@ -314,49 +497,11 @@ export const ClinicianDashboard = ({ user, profile, theme, onToggleTheme, view }
               </div>
               <div style={{ padding: '24px', background: 'rgba(0,0,0,0.02)', borderRadius: '12px' }}>
                 <span style={{ display: 'block', fontSize: '11px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '8px', fontWeight: 600 }}>Total Patients</span>
-                <strong style={{ fontSize: '16px', color: 'var(--accent-purple)' }}>{patients.length}</strong>
-              </div>
-              <div style={{ padding: '24px', background: 'rgba(0,0,0,0.02)', borderRadius: '12px' }}>
-                <span style={{ display: 'block', fontSize: '11px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '8px', fontWeight: 600 }}>Total Practice Hours</span>
-                <strong style={{ fontSize: '16px', color: 'var(--accent-cyan)' }}>{Math.round(totalPatientMinutes / 60)}</strong>
+                <strong style={{ fontSize: '16px', color: 'var(--accent-cyan)' }}>{patients.length}</strong>
               </div>
               <div style={{ padding: '24px', background: 'rgba(0,0,0,0.02)', borderRadius: '12px' }}>
                 <span style={{ display: 'block', fontSize: '11px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '8px', fontWeight: 600 }}>Account Status</span>
                 <strong style={{ fontSize: '16px', color: 'var(--success)' }}>Active</strong>
-              </div>
-            </div>
-          </div>
-
-          {/* Profile Statistics */}
-          <div className="glass-panel clinical-card" style={{ padding: '32px', borderRadius: '16px' }}>
-            <h3 style={{ fontSize: '20px', fontWeight: '800', margin: '0 0 24px 0', color: 'var(--text-primary)' }}>Account Statistics</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '16px', background: 'rgba(6, 182, 212, 0.25)', borderRadius: '12px' }}>
-                <div style={{ background: 'var(--accent-purple-dim)', color: 'var(--accent-purple)', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '10px' }}>
-                  <UserIcon style={{ width: '20px', height: '20px' }} />
-                </div>
-                <div>
-                  <span style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px' }}>Active Patients</span>
-                  <strong style={{ fontSize: '20px', color: 'var(--accent-purple)' }}>{patients.length}</strong>
-                </div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '16px', background: 'var(--success-glow)', borderRadius: '12px' }}>
-                <div style={{ background: 'var(--success-glow)', color: 'var(--success)', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '10px' }}>
-                  <ActivityIcon style={{ width: '20px', height: '20px' }} />
-                </div>
-                <div>
-                  <span style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px' }}>Total Practice Hours</span>
-                  <strong style={{ fontSize: '20px', color: 'var(--success)' }}>{Math.round(totalPatientMinutes / 60)}</strong>
-                </div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '16px', background: 'rgba(0, 200, 200, 0.1)', borderRadius: '12px' }}>
-                <div style={{ background: 'rgba(0, 200, 200, 0.1)', color: 'var(--accent-cyan)', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '10px' }}>
-                  <ClockIcon style={{ width: '20px', height: '20px' }} />
-                </div>
-                <div>
-                  <span style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px' }}>Total Sessions</span>
-                  <strong style={{ fontSize: '20px', color: 'var(--accent-cyan)' }}>{patients.reduce((sum, p) => sum + (p._sessions?.length || 0), 0)}</strong>
-                </div>
               </div>
             </div>
           </div>
@@ -400,7 +545,7 @@ export const ClinicianDashboard = ({ user, profile, theme, onToggleTheme, view }
             {/* Modal Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '28px 36px', borderBottom: '1px solid var(--border-color)' }}>
               <div>
-                <span style={{ fontSize: '11px', textTransform: 'uppercase', color: 'var(--accent-purple)', fontWeight: 700, letterSpacing: '1px' }}>Patient Clinical Profile</span>
+                <span style={{ fontSize: '11px', textTransform: 'uppercase', color: 'var(--accent-cyan)', fontWeight: 700, letterSpacing: '1px' }}>Patient Clinical Profile</span>
                 <h3 style={{ margin: '4px 0 0 0', fontSize: '24px', fontWeight: '800' }}>{selectedPatient.fullName}</h3>
               </div>
               <button
@@ -428,64 +573,117 @@ export const ClinicianDashboard = ({ user, profile, theme, onToggleTheme, view }
             </div>
 
             {/* Modal Scrollable Body Content */}
-            <div style={{ padding: '36px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '32px' }}>
+            <div style={{ padding: '36px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
 
-              {/* Profile Details Panel - No glass-panel classes or heavy nested borders */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', background: 'var(--bg-card-secondary, rgba(0,0,0,0.02))', padding: '24px', borderRadius: '16px' }}>
-                <div style={{ textAlign: 'center', borderRight: '1px solid var(--border-color)' }}>
-                  <span style={{ display: 'block', fontSize: '11px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '6px', fontWeight: 600 }}>Amputation Type</span>
-                  <strong style={{ fontSize: '15px' }}>{selectedPatient.amputationSide} — {selectedPatient.amputationLevel}</strong>
-                </div>
-                <div style={{ textAlign: 'center', borderRight: '1px solid var(--border-color)' }}>
-                  <span style={{ display: 'block', fontSize: '11px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '6px', fontWeight: 600 }}>Peak ROM Progress</span>
-                  <strong style={{ fontSize: '15px', color: 'var(--accent-cyan)' }}>{selectedROM}&deg;</strong>
-                </div>
-                <div style={{ textAlign: 'center' }}>
-                  <span style={{ display: 'block', fontSize: '11px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '6px', fontWeight: 600 }}>Completed Sessions</span>
-                  <strong style={{ fontSize: '15px' }}>{selectedRuns} runs</strong>
-                </div>
+              {/* Tab switcher */}
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button
+                  className={modalTab === 'progress' ? 'btn btn-primary' : 'btn btn-secondary'}
+                  onClick={() => setModalTab('progress')}
+                  style={{ padding: '10px 20px', fontSize: '0.85rem', borderRadius: '10px' }}
+                >
+                  Progress
+                </button>
+                <button
+                  className={modalTab === 'reports' ? 'btn btn-primary' : 'btn btn-secondary'}
+                  onClick={() => setModalTab('reports')}
+                  style={{ padding: '10px 20px', fontSize: '0.85rem', borderRadius: '10px' }}
+                >
+                  Full Report ({selectedRuns})
+                </button>
               </div>
 
-              {/* Configure Prescription Form */}
-              <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '32px' }}>
-                <h4 style={{ margin: '0 0 18px 0', fontSize: '18px', fontWeight: '800' }}>Active Medical Prescription</h4>
-                <form onSubmit={handleSavePrescription} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
-                    <div>
-                      <label htmlFor="rx-dur" style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '8px' }}>Duration (Seconds)</label>
-                      <input id="rx-dur" type="number" min="30" max="1800" value={prescribedDuration} onChange={e => setPrescribedDuration(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: '14px' }} />
+              {modalTab === 'progress' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+                  {/* Profile Details Panel */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', background: 'var(--bg-card-secondary, rgba(0,0,0,0.02))', padding: '24px', borderRadius: '16px' }}>
+                    <div style={{ textAlign: 'center', borderRight: '1px solid var(--border-color)' }}>
+                      <span style={{ display: 'block', fontSize: '11px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '6px', fontWeight: 600 }}>Amputation Type</span>
+                      <strong style={{ fontSize: '15px' }}>{selectedPatient.amputationSide} — {selectedPatient.amputationLevel}</strong>
                     </div>
-                    <div>
-                      <label htmlFor="rx-rad" style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '8px' }}>Spawn Radius (m)</label>
-                      <input id="rx-rad" type="number" step="0.1" min="0.5" max="5.0" value={spawnRadius} onChange={e => setSpawnRadius(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: '14px' }} />
+                    <div style={{ textAlign: 'center', borderRight: '1px solid var(--border-color)' }}>
+                      <span style={{ display: 'block', fontSize: '11px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '6px', fontWeight: 600 }}>Peak ROM Progress</span>
+                      <strong style={{ fontSize: '15px', color: 'var(--accent-cyan)' }}>{selectedROM}&deg;</strong>
                     </div>
-                    <div>
-                      <label htmlFor="rx-dwell" style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '8px' }}>Dwell Time (ms)</label>
-                      <input id="rx-dwell" type="number" min="100" max="5000" step="100" value={dwellTime} onChange={e => setDwellTime(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: '14px' }} />
+                    <div style={{ textAlign: 'center' }}>
+                      <span style={{ display: 'block', fontSize: '11px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '6px', fontWeight: 600 }}>Completed Sessions</span>
+                      <strong style={{ fontSize: '15px' }}>{selectedRuns} runs</strong>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 16, alignItems: 'center', marginTop: '8px' }}>
-                    {rxSuccess && <span style={{ color: 'var(--success)', display: 'inline-flex', gap: 4, alignItems: 'center', fontSize: '13px', fontWeight: 600 }}><CheckIcon style={{ width: '16px', height: '16px' }} /> Prescriptions updated</span>}
-                    <button
-                      type="submit"
-                      className="btn btn-primary"
-                      disabled={rxSaving}
-                      style={{ padding: '12px 28px', fontSize: '14px', fontWeight: 600, minHeight: '44px', borderRadius: '10px' }}
-                    >
-                      {rxSaving ? 'Saving...' : 'Update Treatment Profile'}
-                    </button>
-                  </div>
-                </form>
-              </div>
 
-              {/* Charts & Analytics */}
-              <div>
-                <h4 style={{ margin: '0 0 18px 0', fontSize: '18px', fontWeight: '800' }}>Session Analytics</h4>
-                <div className="chart-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: '24px' }}>
-                  <PremiumLineChart data={selectedPatientSessions} yField="accuracyPercentage" title="Accuracy Over Time" stroke="var(--accent-purple)" suffix="%" />
-                  <PremiumLineChart data={selectedPatientSessions} yField="peakRangeOfMotionDegrees" title="Range of Motion Progress" stroke="var(--accent-cyan)" suffix="deg" />
+                  {/* Configure Prescription Form */}
+                  <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '32px' }}>
+                    <h4 style={{ margin: '0 0 18px 0', fontSize: '18px', fontWeight: '800' }}>Active Medical Prescription</h4>
+                    <form onSubmit={handleSavePrescription} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+                        <div>
+                          <label htmlFor="rx-dur" style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '8px' }}>Duration (Seconds)</label>
+                          <input id="rx-dur" type="number" min="30" max="1800" value={prescribedDuration} onChange={e => setPrescribedDuration(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: '14px' }} />
+                        </div>
+                        <div>
+                          <label htmlFor="rx-rad" style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '8px' }}>Spawn Radius (m)</label>
+                          <input id="rx-rad" type="number" step="0.1" min="0.5" max="5.0" value={spawnRadius} onChange={e => setSpawnRadius(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: '14px' }} />
+                        </div>
+                        <div>
+                          <label htmlFor="rx-dwell" style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '8px' }}>Dwell Time (ms)</label>
+                          <input id="rx-dwell" type="number" min="100" max="5000" step="100" value={dwellTime} onChange={e => setDwellTime(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: '14px' }} />
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 16, alignItems: 'center', marginTop: '8px' }}>
+                        {rxSuccess && <span style={{ color: 'var(--success)', display: 'inline-flex', gap: 4, alignItems: 'center', fontSize: '13px', fontWeight: 600 }}><CheckIcon style={{ width: '16px', height: '16px' }} /> Prescriptions updated</span>}
+                        <button
+                          type="submit"
+                          className="btn btn-primary"
+                          disabled={rxSaving}
+                          style={{ padding: '12px 28px', fontSize: '14px', fontWeight: 600, minHeight: '44px', borderRadius: '10px' }}
+                        >
+                          {rxSaving ? 'Saving...' : 'Update Treatment Profile'}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+
+                  {/* Charts & Analytics */}
+                  <div>
+                    <h4 style={{ margin: '0 0 18px 0', fontSize: '18px', fontWeight: '800' }}>Session Analytics</h4>
+                    <div className="chart-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: '24px' }}>
+                      <PremiumLineChart data={selectedPatientSessions} yField="accuracyPercentage" title="Accuracy Over Time" stroke="var(--accent-cyan)" suffix="%" />
+                      <PremiumLineChart data={selectedPatientSessions} yField="peakRangeOfMotionDegrees" title="Range of Motion Progress" stroke="var(--success)" suffix="deg" />
+                    </div>
+                  </div>
                 </div>
-              </div>
+              )}
+
+              {modalTab === 'reports' && (
+                <div>
+                  <h4 style={{ margin: '0 0 18px 0', fontSize: '18px', fontWeight: '800' }}>Full Session Report</h4>
+                  {selectedPatientSessions.length === 0 ? (
+                    <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                      No sessions recorded for this patient yet.
+                    </div>
+                  ) : (
+                    <div className="session-table-wrap">
+                      <table className="session-table">
+                        <thead>
+                          <tr>
+                            <th>DATE</th>
+                            <th>TIME</th>
+                            <th>MODE</th>
+                            <th>DURATION</th>
+                            <th>TARGETS</th>
+                            <th>ACCURACY</th>
+                            <th>PAIN</th>
+                            <th>SCORE</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {renderReportRows(selectedPatientSessions)}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
 
             </div>
           </div>
