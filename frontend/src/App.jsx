@@ -210,10 +210,12 @@ function App() {
 
   const explainAppVoiceScript = useCallback(() => {
     speakApp(
-      'Voice mode is active. Say dashboard, scroll down, scroll up, therapy session, therapy game, or camera mirror. During therapy say start therapy, raise hands, lower hands, open hand, clench fist, victory, thumbs up, point, pinch, pain level is followed by a number, pause, resume, end session, end game, or reach target.'
+      profile?.amputationSide === 'BILATERAL'
+        ? 'Voice mode is active. Say dashboard, scroll down, scroll up, therapy session, therapy game, camera mirror, or record pose. During therapy say start therapy, raise hands, lower hands, open hand, clench fist, victory, thumbs up, point, pinch, pain level is followed by a number, pause, resume, end session, end game, or reach target.'
+        : 'Voice mode is active. Say dashboard, scroll down, scroll up, therapy session, therapy game, or camera mirror. During therapy say start therapy, raise hands, lower hands, open hand, clench fist, victory, thumbs up, point, pinch, pain level is followed by a number, pause, resume, end session, end game, or reach target.'
     );
-  }, [speakApp]);
-
+  }, [speakApp, profile]);
+  
   const processAppVoiceCommand = useCallback((spokenText) => {
     const text = spokenText.toLowerCase().replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
     const now = Date.now();
@@ -241,6 +243,14 @@ function App() {
       window.scrollBy({ top: -Math.max(360, Math.round(window.innerHeight * 0.75)), behavior: 'smooth' });
       return;
     }
+
+    if (profile?.amputationSide === 'BILATERAL' && (text.includes('record pose') || text.includes('pose library'))) {
+      sessionStorage.setItem('phantomtouchAutoRecordPose', 'true');
+      handleNavigate('game');
+      speakApp('Opening pose recording. Show your full arm and hand to the camera and hold each pose.');
+      return;
+    }
+
     if (text.includes('therapy game') || text.includes('game mode')) {
       sessionStorage.setItem('phantomtouchPracticeMode', 'game');
       handleNavigate('game');
@@ -285,7 +295,7 @@ function App() {
       speakApp('Opening profile.');
       return;
     }
-  }, [explainAppVoiceScript, handleNavigate, screen, speakApp]);
+  }, [explainAppVoiceScript, handleNavigate, profile, screen, speakApp]);
 
   useEffect(() => {
     if (!token || !user || screen === 'landing' || screen === 'login' || screen === 'register' || screen === 'profileSetup') return;

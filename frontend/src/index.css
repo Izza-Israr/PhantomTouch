@@ -785,7 +785,7 @@ label {
 /* Horizontal metrics list (Image 3 style) */
 .horizontal-metrics-row {
   display: grid;
-  grid-template-columns: repeat(5, minmax(220px, 1fr));
+  grid-template-columns: repeat(4, minmax(220px, 1fr));
   gap: 16px;
   margin-bottom: 24px;
 }
@@ -2664,7 +2664,15 @@ label {
 }
 
 @media (max-width: 420px) {
-  .landing-orb { display: none; }
-  .landing-cta { padding: 28px 14px; }
-  .hero-gradient-text { font-size: clamp(2rem, 8vw, 2.6rem); }
+  .landing-orb {
+    display: none;
+  }
+
+  .landing-cta {
+    padding: 28px 14px;
+  }
+
+  .hero-gradient-text {
+    font-size: clamp(2rem, 8vw, 2.6rem);
+  }
 }

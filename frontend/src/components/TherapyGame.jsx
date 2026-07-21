@@ -161,6 +161,13 @@ export const TherapyGame = ({ profile, onNavigate }) => {
     sessionStorage.removeItem('phantomtouchPracticeMode');
     return savedMode === 'camera' || savedMode === 'game' ? savedMode : null;
   });
+
+  const autoRecordRequestedRef = useRef(sessionStorage.getItem('phantomtouchAutoRecordPose') === 'true');
+  useEffect(() => {
+    sessionStorage.removeItem('phantomtouchAutoRecordPose');
+  }, []);
+
+
   const [secondsLeft, setSecondsLeft] = useState(120);
   const [sessionDuration, setSessionDuration] = useState(120);
   const [targetsHit, setTargetsHit] = useState(0);
@@ -517,6 +524,18 @@ export const TherapyGame = ({ profile, onNavigate }) => {
     setGameState('recording');
   }, []);
 
+  useEffect(() => {
+    if (
+      autoRecordRequestedRef.current &&
+      amputationSide === 'BILATERAL' &&
+      gameState === 'ready'
+    ) {
+      autoRecordRequestedRef.current = false;
+      if (!practiceMode) setPracticeMode('camera');
+      startPoseRecording();
+    }
+  }, [amputationSide, gameState, practiceMode, startPoseRecording]);
+
   const recordPoseAction = useCallback(async (actionKey) => {
     const snapshot = configRef.current.latestTrackingSnapshot;
     if (!snapshot?.capturedAt || (performance.now() - snapshot.capturedAt) > 1600) {
@@ -852,13 +871,16 @@ export const TherapyGame = ({ profile, onNavigate }) => {
             >
               Change Mode
             </button>
+            
+          {amputationSide !== 'BILATERAL' && (
             <button
               className="btn btn-secondary"
               style={{ padding: '10px 22px' }}
               onClick={() => selectSide(null)}
             >
-              ← Change Side
+               Change Side
             </button>
+          )}
             {amputationSide === 'BILATERAL' && (
               <button
                 className="btn btn-secondary"
