@@ -87,6 +87,7 @@ create table therapy_sessions (
   targets_hit integer not null default 0,
   accuracy_percentage numeric not null default 0,
   peak_range_of_motion_degrees numeric not null default 0,
+  therapy_score numeric not null default 0,
   pain_level integer default null check (pain_level is null or (pain_level >= 0 and pain_level <= 10))
 );
 
@@ -94,6 +95,9 @@ create table therapy_sessions (
 -- ALTER TABLE therapy_sessions ADD COLUMN IF NOT EXISTS pain_level integer check (pain_level is null or (pain_level >= 0 and pain_level <= 10));
 
 -- Ensure runtime DB migrations: add commonly used columns if missing.
+ALTER TABLE therapy_sessions
+  ADD COLUMN IF NOT EXISTS therapy_score numeric not null default 0;
+
 ALTER TABLE therapy_sessions
   ADD COLUMN IF NOT EXISTS pain_level integer check (pain_level is null or (pain_level >= 0 and pain_level <= 10));
 

@@ -210,7 +210,7 @@ export const TherapyGame = ({ profile, onNavigate }) => {
 
   const statsRef = useRef({
     hits: 0, spawned: 0, startTime: null, endTime: null,
-    peakROM: 0, telemetry: [], startPos: null,
+    peakROM: 0, telemetry: [], startPos: null, startAngles: {},
   });
 
   const configRef = useRef({
@@ -437,19 +437,7 @@ export const TherapyGame = ({ profile, onNavigate }) => {
       }
     }
 
-    const wrist = real?.[0] || phantom?.left?.[0] || phantom?.right?.[0];
-    if (wrist) {
-      const currentPos = new THREE.Vector3(wrist.x, wrist.y, wrist.z);
-      if (!statsRef.current.startPos) {
-        statsRef.current.startPos = currentPos.clone();
-      } else {
-        const deg = Math.min(120, Math.round(currentPos.distanceTo(statsRef.current.startPos) * 15));
-        if (deg > statsRef.current.peakROM) {
-          statsRef.current.peakROM = deg;
-          setPeakROM(deg);
-        }
-      }
-    }
+    
   }, [sceneRef, isPaused, practiceMode]);
 
   const selectSide = useCallback((side) => {
@@ -614,9 +602,31 @@ export const TherapyGame = ({ profile, onNavigate }) => {
         ? `Live tracking: ${handCount} hand${handCount > 1 ? 's' : ''} detected`
         : 'Live tracking: arms detected, waiting for hand landmarks');
     }
+
+    // Track peak ROM using the real elbow angle(s) reported by the mirror engine,
+    // measured against wherever the arm was on the first tracked frame of the session.
+    if (gameStateRef.current === 'running' && !isPaused) {
+      const angleReadings = [];
+      if (typeof data.romAngle === 'number') angleReadings.push(['unilateral', data.romAngle]);
+      if (data.romAngles?.left != null) angleReadings.push(['left', data.romAngles.left]);
+      if (data.romAngles?.right != null) angleReadings.push(['right', data.romAngles.right]);
+
+      angleReadings.forEach(([key, angle]) => {
+        if (statsRef.current.startAngles[key] == null) {
+          statsRef.current.startAngles[key] = angle;
+          return;
+        }
+        const romFromStart = Math.round(Math.abs(angle - statsRef.current.startAngles[key]));
+        if (romFromStart > statsRef.current.peakROM) {
+          statsRef.current.peakROM = romFromStart;
+          setPeakROM(romFromStart);
+        }
+      });
+    }
+
     const { real, phantom } = data;
     if (real || phantom) handleLandmarks(real, phantom);
-  }, [handleLandmarks]);
+  }, [handleLandmarks, isPaused]);
 
   useEffect(() => { landmarksHandlerRef.current = onLandmarksUpdate; });
 
@@ -738,8 +748,7 @@ export const TherapyGame = ({ profile, onNavigate }) => {
 
   const startSession = useCallback(() => {
     sessionEndInProgressRef.current = false;
-    statsRef.current = { hits: 0, spawned: practiceMode === 'game' ? 1 : 0, startTime: Date.now(), endTime: null, peakROM: 0, telemetry: [], startPos: null };
-    configRef.current.hoverAccumMs = 0;
+    statsRef.current = { hits: 0, spawned: practiceMode === 'game' ? 1 : 0, startTime: Date.now(), endTime: null, peakROM: 0, telemetry: [], startPos: null, startAngles: {} };    configRef.current.hoverAccumMs = 0;
     configRef.current.bilateralRecordingMode = false;
     const duration = configRef.current.prescribedDuration || 120;
     setTargetsHit(0);

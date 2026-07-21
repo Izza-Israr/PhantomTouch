@@ -12,6 +12,18 @@ function getPoseIdx(side) {
     : { sh: 12, el: 14, wr: 16 };
 }
 
+function calculateElbowAngle(shoulder, elbow, wrist) {
+  if (!shoulder || !elbow || !wrist) return null;
+  const v1 = { x: shoulder.x - elbow.x, y: shoulder.y - elbow.y, z: (shoulder.z || 0) - (elbow.z || 0) };
+  const v2 = { x: wrist.x - elbow.x, y: wrist.y - elbow.y, z: (wrist.z || 0) - (elbow.z || 0) };
+  const dot = v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
+  const mag1 = Math.sqrt(v1.x ** 2 + v1.y ** 2 + v1.z ** 2);
+  const mag2 = Math.sqrt(v2.x ** 2 + v2.y ** 2 + v2.z ** 2);
+  if (mag1 === 0 || mag2 === 0) return null;
+  const cosAngle = Math.max(-1, Math.min(1, dot / (mag1 * mag2)));
+  return Math.round((Math.acos(cosAngle) * 180) / Math.PI);
+}
+
 const cloneLandmark = (lm) => lm ? { x: lm.x, y: lm.y, z: lm.z || 0, visibility: lm.visibility } : null;
 const cloneLandmarks = (landmarks) => Array.isArray(landmarks) ? landmarks.map(cloneLandmark) : null;
 
@@ -286,12 +298,29 @@ export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
         videoRect
       );
 
+      const leftRomAngle = calculateElbowAngle(
+        pose[leftIdx.sh]?.visibility > 0.5 ? pose[leftIdx.sh] : null,
+        pose[leftIdx.el]?.visibility > 0.5 ? pose[leftIdx.el] : null,
+        pose[leftIdx.wr]
+      );
+      const rightRomAngle = calculateElbowAngle(
+        pose[rightIdx.sh]?.visibility > 0.5 ? pose[rightIdx.sh] : null,
+        pose[rightIdx.el]?.visibility > 0.5 ? pose[rightIdx.el] : null,
+        pose[rightIdx.wr]
+      );
+
       if (onLandmarksUpdate && (now - lastUiUpdateRef.current) >= UI_UPDATE_MS) {
-        onLandmarksUpdate({ real: null, phantom: { left: leftPhantom, right: rightPhantom, action: leftRecorded.action } });
+        onLandmarksUpdate({
+          real: null,
+          phantom: { left: leftPhantom, right: rightPhantom, action: leftRecorded.action },
+          romAngles: { left: leftRomAngle, right: rightRomAngle }
+        });
         lastUiUpdateRef.current = now;
       }
       return;
     }
+
+    // ── Stable side assignment (never re-detected mid-session) ────────────
 
     // ── Stable side assignment (never re-detected mid-session) ────────────
     // amputationSide = the MISSING limb; healthySide = the one with a real hand
@@ -327,10 +356,15 @@ export function useMirrorEngine({ configRef, onLandmarksUpdate }) {
       cameraRef.current, videoRect
     );
 
+    const romAngle = calculateElbowAngle(
+      pose[healthyIdx.sh]?.visibility > 0.5 ? pose[healthyIdx.sh] : null,
+      pose[healthyIdx.el]?.visibility > 0.5 ? pose[healthyIdx.el] : null,
+      pose[healthyIdx.wr]
+    );
+
     if (onLandmarksUpdate && (now - lastUiUpdateRef.current) >= UI_UPDATE_MS) {
-      // Only pass real & phantom world-space positions.
-      // No 2D overlay data — the duplicate canvas phantom is removed.
-      onLandmarksUpdate({ real, phantom });
+      // Pass real & phantom world-space positions, plus the healthy arm's elbow angle for ROM tracking.
+      onLandmarksUpdate({ real, phantom, romAngle });
       lastUiUpdateRef.current = now;
     }
   }, [configRef, onLandmarksUpdate, hideArm, getVideoRect, getRecordedPose]);

@@ -25,11 +25,13 @@ router.post('/', auth, async (req, res) => {
     }
 
     // Keep the raw incoming timestamp strings so any timezone offset the client sent is preserved.
+    // Keep the raw incoming timestamp strings so any timezone offset the client sent is preserved.
     const startRaw = startTime;
     const endRaw = endTime;
     const start = new Date(startRaw);
     const end = new Date(endRaw);
     const totalDurationSeconds = Math.max(1, Math.round((end - start) / 1000));
+    const normalizedSessionType = sessionType === 'CAMERA' ? 'CAMERA' : 'GAME';
     const accuracyPercentage = targetsSpawned > 0
       ? Math.round((targetsHit / targetsSpawned) * 100)
       : 0;
@@ -41,10 +43,37 @@ router.post('/', auth, async (req, res) => {
       return res.status(400).json({ message: 'Pain level must be an integer from 0 to 10' });
     }
 
+    // Look up the prescribed duration so we can score how much of the plan was completed.
+    let prescribedDurationSeconds = null;
+    if (prescriptionId) {
+      const { data: prescriptionRow } = await supabase
+        .from('clinical_prescriptions')
+        .select('prescribed_session_duration_seconds')
+        .eq('id', prescriptionId)
+        .maybeSingle();
+      prescribedDurationSeconds = prescriptionRow?.prescribed_session_duration_seconds || null;
+    }
+
+    // Composite therapy score: accuracy is weighted highest since it's the most
+    // objective signal, then ROM (scaled against a ~90 degree functional target),
+    // then how much of the prescribed session duration was completed.
+    // Camera-only sessions have no target accuracy, so weight is redistributed.
+    const romComponent = Math.min(100, Math.round(((Number(peakRangeOfMotionDegrees) || 0) / 90) * 100));
+    const completionComponent = prescribedDurationSeconds > 0
+      ? Math.min(100, Math.round((totalDurationSeconds / prescribedDurationSeconds) * 100))
+      : 100;
+    const therapyScore = normalizedSessionType === 'GAME'
+      ? Math.max(0, Math.min(100, Math.round(
+        Math.min(100, accuracyPercentage) * 0.5 + romComponent * 0.35 + completionComponent * 0.15
+      )))
+      : Math.max(0, Math.min(100, Math.round(
+        romComponent * 0.7 + completionComponent * 0.3
+      )));
+
     const insertObj = {
       patient_id: patientId,
       prescription_id: prescriptionId || null,
-      session_type: sessionType === 'CAMERA' ? 'CAMERA' : 'GAME',
+      session_type: normalizedSessionType,
       // Use raw strings so PostgreSQL receives the Pakistan Standard Time offset from the client.
       start_time: startRaw,
       end_time: endRaw,
@@ -53,6 +82,7 @@ router.post('/', auth, async (req, res) => {
       targets_hit: Number(targetsHit || 0),
       accuracy_percentage: accuracyPercentage,
       peak_range_of_motion_degrees: Number(peakRangeOfMotionDegrees || 0),
+      therapy_score: therapyScore,
       pain_level: normalizedPainLevel
     };
 

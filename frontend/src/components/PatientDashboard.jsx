@@ -243,6 +243,9 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
   const avgAccuracy = sessions.length
     ? Math.round(sessions.reduce((acc, curr) => acc + (curr.accuracyPercentage || 0), 0) / sessions.length)
     : null;
+  const avgTherapyScore = sessions.length
+    ? Math.round(sessions.reduce((acc, curr) => acc + (curr.therapyScore || 0), 0) / sessions.length)
+    : null;
   const peakROM = sessions.length ? Math.max(...sessions.map(s => s.peakRangeOfMotionDegrees || 0)) : null;
   const totalMinutes = sessions.length
     ? Math.round(sessions.reduce((acc, curr) => acc + (curr.totalDurationSeconds || 0), 0) / 60)
@@ -336,8 +339,7 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
     const sTargets = isCameraSession ? '—' : (session.targetsHit != null ? `${session.targetsHit}/${session.targetsSpawned ?? '--'}` : '—');
     const sAccuracy = isCameraSession ? '—' : (session.accuracyPercentage != null ? `${session.accuracyPercentage}%` : '—');
     const sPain = getPainForIndex(index);
-    const sScore = isCameraSession ? null : (session.accuracyPercentage != null ? Math.min(100, Math.round(session.accuracyPercentage * 1.02 + 1)) : null);
-
+    const sScore = session.therapyScore != null ? Math.round(session.therapyScore) : null;
     return (
       <tr key={session._id || session.id || index}>
         <td>{sDate}</td>
@@ -568,8 +570,8 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="7" /><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88" /></svg>
                   </div>
                 </div>
-                <strong style={{ fontSize: '1.6rem', fontWeight: 800 }}>{avgAccuracy !== null ? `${Math.min(100, avgAccuracy + 3)}/100` : '--/100'}</strong>
-                <span style={{ fontSize: '0.72rem', color: 'var(--accent-cyan)', fontWeight: 600 }}>{avgAccuracy !== null ? '+6 this month' : 'No score yet'}</span>
+                <strong style={{ fontSize: '1.6rem', fontWeight: 800 }}>{avgTherapyScore !== null ? `${avgTherapyScore}/100` : '--/100'}</strong>
+                <span style={{ fontSize: '0.72rem', color: 'var(--accent-cyan)', fontWeight: 600 }}>{avgTherapyScore !== null ? 'Based on accuracy, ROM & completion' : 'No score yet'}</span>
               </div>
             </div>
           </div>
@@ -884,8 +886,7 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
               <CircularProgressCard value={dailyStreak ? `${dailyStreak}` : '—'} label="Daily Streak" sublabel="days" percentage={dailyStreak ? Math.min(100, dailyStreak) : 0} strokeColor="var(--warning)" />
               <CircularProgressCard value={typeof totalRuns === 'number' ? totalRuns : '—'} label="Sessions" sublabel="total" percentage={totalRuns ? Math.min(100, totalRuns) : 0} strokeColor="var(--accent-cyan)" />
               <CircularProgressCard value={painReductionPercent !== null ? `${painReductionPercent}%` : '—'} label="Pain Relief" sublabel="previous" percentage={painReductionPercent !== null ? Math.min(100, Math.max(0, painReductionPercent)) : 0} strokeColor={painReductionPercent !== null && painReductionPercent < 0 ? 'var(--error)' : 'var(--success)'} />
-              <CircularProgressCard value={avgAccuracy !== null ? `${Math.min(100, avgAccuracy + 3)}` : '--'} label="Score" sublabel="/100" percentage={avgAccuracy !== null ? Math.min(100, avgAccuracy + 3) : 0} strokeColor="var(--accent-cyan)" />
-            </section>
+              <CircularProgressCard value={avgTherapyScore !== null ? `${avgTherapyScore}` : '--'} label="Score" sublabel="/100" percentage={avgTherapyScore !== null ? avgTherapyScore : 0} strokeColor="var(--accent-cyan)" />            </section>
 
             <section style={{ marginTop: '24px' }}>
               <div className="clinical-card-title" style={{ marginBottom: '18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -915,8 +916,7 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
             <CircularProgressCard value={dailyStreak ? `${dailyStreak}` : '—'} label="Daily Streak" sublabel="days" percentage={dailyStreak ? Math.min(100, dailyStreak) : 0} strokeColor="var(--warning)" />
             <CircularProgressCard value={typeof totalRuns === 'number' ? totalRuns : '—'} label="Sessions" sublabel="total" percentage={totalRuns ? Math.min(100, totalRuns) : 0} strokeColor="var(--accent-cyan)" />
             <CircularProgressCard value={painReductionPercent !== null ? `${painReductionPercent}%` : '—'} label="Pain Relief" sublabel="previous" percentage={painReductionPercent !== null ? Math.min(100, Math.max(0, painReductionPercent)) : 0} strokeColor={painReductionPercent !== null && painReductionPercent < 0 ? 'var(--error)' : 'var(--success)'} />
-            <CircularProgressCard value={avgAccuracy !== null ? `${Math.min(100, avgAccuracy + 3)}` : '--'} label="Score" sublabel="/100" percentage={avgAccuracy !== null ? Math.min(100, avgAccuracy + 3) : 0} strokeColor="var(--accent-cyan)" />
-          </section>
+            <CircularProgressCard value={avgTherapyScore !== null ? `${avgTherapyScore}` : '--'} label="Score" sublabel="/100" percentage={avgTherapyScore !== null ? avgTherapyScore : 0} strokeColor="var(--accent-cyan)" />          </section>
 
           <section className="glass-panel clinical-card" style={{ padding: '24px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', marginTop: '24px' }}>
             <div className="clinical-card-title" style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
