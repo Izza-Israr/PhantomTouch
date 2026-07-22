@@ -250,9 +250,6 @@ export const AuthScreen = ({ mode = 'login', onAuthSuccess, onNavigate, onGoogle
     };
 
     recognition.onerror = (e) => {
-      if (e?.error === 'aborted' || e?.error === 'no-speech' || e?.error === 'audio-capture') {
-        return;
-      }
       console.warn('Speech recognition error', e);
       setVoiceError(e.error || 'Voice recognition failed');
       setVoiceActive(false);

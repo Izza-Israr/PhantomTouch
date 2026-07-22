@@ -140,7 +140,7 @@ export const LandingScreen = ({ onNavigate }) => {
     };
 
     recognition.onerror = (e) => {
-      if (e?.error === 'aborted' || e?.error === 'no-speech' || e?.error === 'audio-capture') return;
+      if (e.error === 'aborted') return;
       console.warn('Landing recognition error', e);
     };
     recognition.onend = () => {
@@ -213,7 +213,7 @@ export const LandingScreen = ({ onNavigate }) => {
         </div>
       </section>
 
-
+      
 
       {/* Tech Stack */}
       <section style={{ textAlign: 'center', padding: '60px 40px', background: 'var(--bg-secondary)', borderRadius: '24px', border: '1px solid var(--border-color)', marginBottom: '60px', position: 'relative', zIndex: 1 }}>

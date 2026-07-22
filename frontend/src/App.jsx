@@ -373,9 +373,6 @@ function App() {
       appVoiceRecognitionRef.current = recognition;
     };
     recognition.onerror = (event) => {
-      if (event?.error === 'aborted' || event?.error === 'no-speech' || event?.error === 'audio-capture') {
-        return;
-      }
       console.warn('App speech recognition error:', event.error || event);
       if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
         setAppVoiceEnabled(false);
