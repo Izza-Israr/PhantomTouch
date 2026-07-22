@@ -427,7 +427,7 @@ function App() {
           style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}
         >
           <img
-            src="../public/short logo.png"
+            src="/short logo.png"
             alt="PhantomTouch"
             style={{
               width: '36px',
