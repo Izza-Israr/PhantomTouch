@@ -16,11 +16,11 @@ const sessionRoutes = require('./routes/sessions');
 const notificationRoutes = require('./routes/notifications');
 
 // Bind API Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/patients', patientRoutes);
-app.use('/api/prescriptions', prescriptionRoutes);
-app.use('/api/sessions', sessionRoutes);
-app.use('/api/notifications', notificationRoutes);
+app.use(['/api/auth', '/auth'], authRoutes);
+app.use(['/api/patients', '/patients'], patientRoutes);
+app.use(['/api/prescriptions', '/prescriptions'], prescriptionRoutes);
+app.use(['/api/sessions', '/sessions'], sessionRoutes);
+app.use(['/api/notifications', '/notifications'], notificationRoutes);
 
 app.get('/', (req, res) => {
   res.json({ status: 'ok', message: 'PhantomTouch backend root. Use /api/* routes.' });
