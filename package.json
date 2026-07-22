@@ -21,5 +21,8 @@
         "express": "^5.2.1",
         "google-auth-library": "^10.9.0",
         "serverless-http": "^3.0.0"
+    },
+    "engines": {
+        "node": "22.x"
     }
 }
