@@ -31,7 +31,7 @@ export const ClinicianDashboard = ({ user, profile, theme, onToggleTheme, view }
   const fetchPatients = useCallback(async () => {
     try {
       const config = { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } };
-      const res = await axios.get('http://localhost:5000/api/patients', config);
+      const res = await axios.get('/api/patients', config);
       const patientList = res.data || [];
       setPatients(patientList);
 
@@ -40,7 +40,7 @@ export const ClinicianDashboard = ({ user, profile, theme, onToggleTheme, view }
       const entries = await Promise.all(
         patientList.map(async (pat) => {
           try {
-            const sRes = await axios.get(`http://localhost:5000/api/sessions/patient/${pat._id}`, config);
+            const sRes = await axios.get(`/api/sessions/patient/${pat._id}`, config);
             return [pat._id, sRes.data || []];
           } catch (err) {
             console.error(`Failed to load sessions for patient ${pat._id}:`, err);
@@ -72,8 +72,8 @@ export const ClinicianDashboard = ({ user, profile, theme, onToggleTheme, view }
     try {
       const config = { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } };
       const [rxRes, sessionsRes] = await Promise.all([
-        axios.get(`http://localhost:5000/api/prescriptions/patient/${patient._id}`, config),
-        axios.get(`http://localhost:5000/api/sessions/patient/${patient._id}`, config)
+        axios.get(`/api/prescriptions/patient/${patient._id}`, config),
+        axios.get(`/api/sessions/patient/${patient._id}`, config)
       ]);
 
       setSelectedPatientPrescription(rxRes.data);
@@ -95,7 +95,7 @@ export const ClinicianDashboard = ({ user, profile, theme, onToggleTheme, view }
 
     try {
       const config = { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } };
-      await axios.post('http://localhost:5000/api/patients', {
+      await axios.post('/api/patients', {
         email: newEmail,
         password: newPassword,
         fullName: newFullName,
@@ -125,7 +125,7 @@ export const ClinicianDashboard = ({ user, profile, theme, onToggleTheme, view }
 
     try {
       const config = { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } };
-      const res = await axios.post('http://localhost:5000/api/prescriptions', {
+      const res = await axios.post('/api/prescriptions', {
         patientId: selectedPatient._id,
         prescribedSessionDurationSeconds: Number(prescribedDuration),
         targetSpawnRadius: Number(spawnRadius),

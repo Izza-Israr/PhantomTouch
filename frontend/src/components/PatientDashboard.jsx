@@ -84,7 +84,7 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
     if (!profile?._id) return;
     try {
       const config = { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } };
-      const res = await axios.get(`http://localhost:5000/api/patients/${profile._id}`, config);
+      const res = await axios.get(`/api/patients/${profile._id}`, config);
       setPatientDetail(res.data);
     } catch (err) {
       console.error('Failed to load patient detail:', err);
@@ -95,13 +95,13 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
     setLoading(true);
     try {
       const config = { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } };
-      const rxRes = await axios.get(`http://localhost:5000/api/prescriptions/patient/${profile._id}`, config);
+      const rxRes = await axios.get(`/api/prescriptions/patient/${profile._id}`, config);
       setPrescription(rxRes.data);
       if (rxRes.data?.id && profile.currentPrescriptionId !== rxRes.data.id) {
         onUpdateProfile({ ...profile, currentPrescriptionId: rxRes.data.id });
       }
 
-      const sessionsRes = await axios.get(`http://localhost:5000/api/sessions/patient/${profile._id}`, config);
+      const sessionsRes = await axios.get(`/api/sessions/patient/${profile._id}`, config);
       setSessions(sessionsRes.data);
 
       await fetchPatientDetail();
@@ -168,7 +168,7 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
       const config = { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } };
 
       const lookupRes = await axios.get(
-        `http://localhost:5000/api/patients/lookup-clinician?email=${encodeURIComponent(email)}`,
+        `/api/patients/lookup-clinician?email=${encodeURIComponent(email)}`,
         config
       );
 
@@ -177,7 +177,7 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
         return;
       }
 
-      await axios.put(`http://localhost:5000/api/patients/${profile._id}`, {
+      await axios.put(`/api/patients/${profile._id}`, {
         assignedClinicianId: lookupRes.data.clinicianId
       }, config);
 
@@ -228,7 +228,7 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
         rightMissingFingers: profileForm.rightAmputationLevel === 'FINGER_AMPUTATION' ? profileForm.rightMissingFingers : [],
         voiceModePreferred: profileForm.voiceModePreferred || profileForm.amputationSide === 'BILATERAL'
       };
-      const res = await axios.put(`http://localhost:5000/api/patients/${profile._id}`, payload, {
+      const res = await axios.put(`/api/patients/${profile._id}`, payload, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
       onUpdateProfile(res.data);

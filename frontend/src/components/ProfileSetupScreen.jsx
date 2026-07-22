@@ -165,7 +165,7 @@ export const ProfileSetupScreen = ({ user, googleName, token, onProfileComplete 
         if (dob) payload.dateOfBirth = dob;
       }
 
-      const res = await axios.post('http://localhost:5000/api/auth/complete-profile', payload, {
+      const res = await axios.post('/api/auth/complete-profile', payload, {
         headers: { Authorization: `Bearer ${token}` }
       });
 

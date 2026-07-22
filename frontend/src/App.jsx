@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import axios from 'axios';
+
+axios.defaults.baseURL = import.meta.env.VITE_API_BASE_URL || '';
+
 import { LandingScreen } from './components/LandingScreen';
 import { AuthScreen } from './components/AuthScreen';
 import { ProfileSetupScreen } from './components/ProfileSetupScreen';
@@ -45,7 +48,7 @@ function App() {
     try {
       const storedToken = localStorage.getItem('token');
       if (storedToken) {
-        await axios.post('http://localhost:5000/api/auth/logout', {}, {
+        await axios.post('/api/auth/logout', {}, {
           headers: { Authorization: `Bearer ${storedToken}` }
         });
       }
@@ -73,7 +76,7 @@ function App() {
       }
 
       try {
-        const res = await axios.get('http://localhost:5000/api/auth/me', {
+        const res = await axios.get('/api/auth/me', {
           headers: { Authorization: `Bearer ${storedToken}` }
         });
 
@@ -163,7 +166,7 @@ function App() {
 
   const fetchNotifications = async () => {
     try {
-      const res = await axios.get('http://localhost:5000/api/notifications');
+      const res = await axios.get('/api/notifications');
       setNotifications(res.data || []);
     } catch (err) {
       console.error('Failed to fetch notifications:', err);
@@ -180,7 +183,7 @@ function App() {
 
   const markNotificationRead = async (id) => {
     try {
-      await axios.post(`http://localhost:5000/api/notifications/${id}/read`);
+      await axios.post(`/api/notifications/${id}/read`);
       setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
     } catch (err) {
       console.error('Failed to mark notification read:', err);

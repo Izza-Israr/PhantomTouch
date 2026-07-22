@@ -258,7 +258,7 @@ export const TherapyGame = ({ profile, onNavigate }) => {
     const token = localStorage.getItem('token');
     if (!patientId || !token) return false;
     try {
-      await axios.put(`http://localhost:5000/api/patients/${patientId}/bilateral-pose-library`, {
+      await axios.put(`/api/patients/${patientId}/bilateral-pose-library`, {
         poseLibrary: library,
       }, {
         headers: { Authorization: `Bearer ${token}` },
@@ -276,7 +276,7 @@ export const TherapyGame = ({ profile, onNavigate }) => {
       if (!patientId || !token) return;
 
       try {
-        const res = await axios.get(`http://localhost:5000/api/patients/${patientId}/bilateral-pose-library`, {
+        const res = await axios.get(`/api/patients/${patientId}/bilateral-pose-library`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         const dbLibrary = res.data?.poseLibrary || {};
@@ -326,7 +326,7 @@ export const TherapyGame = ({ profile, onNavigate }) => {
       if (!patientId || !token) return;
 
       try {
-        const res = await axios.get(`http://localhost:5000/api/prescriptions/patient/${patientId}`, {
+        const res = await axios.get(`/api/prescriptions/patient/${patientId}`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         if (res.data) {
@@ -709,7 +709,7 @@ export const TherapyGame = ({ profile, onNavigate }) => {
       }
 
       console.log('Saving therapy session payload:', payload);
-      const res = await axios.post('http://localhost:5000/api/sessions', payload, {
+      const res = await axios.post('/api/sessions', payload, {
         headers: {
           Authorization: `Bearer ${token}`
         }

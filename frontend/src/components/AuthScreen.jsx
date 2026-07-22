@@ -331,7 +331,7 @@ export const AuthScreen = ({ mode = 'login', onAuthSuccess, onNavigate, onGoogle
         }
       }
 
-      const res = await axios.post('http://localhost:5000/api/auth/google', payload);
+      const res = await axios.post('/api/auth/google', payload);
 
       if (res.data) {
         if (res.data.needsProfileSetup) {
@@ -409,7 +409,7 @@ export const AuthScreen = ({ mode = 'login', onAuthSuccess, onNavigate, onGoogle
     setLoading(true);
 
     try {
-      const baseUrl = 'http://localhost:5000/api/auth';
+      const baseUrl = '/api/auth';
       if (isLogin) {
         const res = await axios.post(`${baseUrl}/login`, { email, password });
         if (res.data && res.data.token) {

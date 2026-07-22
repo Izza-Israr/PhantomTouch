@@ -98,6 +98,27 @@ cd backend
 npm test
 ```
 
+### 5. Deploy to Vercel
+
+From the repository root:
+
+```bash
+npm install
+npx vercel login
+npx vercel --prod
+```
+
+The project is configured as a monorepo:
+- `frontend` is built as a static app
+- `/api/index.js` wraps the Express backend for Vercel serverless functions
+
+If you want to preview the production build locally first:
+
+```bash
+npm run build
+npx vercel dev
+```
+
 ## Demo accounts
 
 Seeded automatically on first backend start:
