@@ -45,6 +45,7 @@ const EyeOffIcon = () => (
 );
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+let googleSignInInitializedForClient = '';
 
 const EMAIL_WORDS = {
   at: '@',
@@ -120,6 +121,7 @@ export const AuthScreen = ({ mode = 'login', onAuthSuccess, onNavigate, onGoogle
   const formSnapshotRef = useRef({});
   const googleBtnContainerRef = useRef(null);
   const googleInitializedRef = useRef(false);
+  const handleGoogleResponseRef = useRef(null);
   const lastVoiceCommandRef = useRef('');
   const isSpeakingRef = useRef(false);
 
@@ -366,34 +368,54 @@ export const AuthScreen = ({ mode = 'login', onAuthSuccess, onNavigate, onGoogle
     onAuthSuccess, onGoogleNeedsProfile
   ]);
 
+  useEffect(() => {
+    handleGoogleResponseRef.current = handleGoogleResponse;
+  }, [handleGoogleResponse]);
+
   // Initialize Google Identity Services and render official button
   useEffect(() => {
     if (!GOOGLE_CLIENT_ID || googleInitializedRef.current) return;
+    if (googleSignInInitializedForClient === GOOGLE_CLIENT_ID) return;
+
+    let cancelled = false;
 
     const initAndRenderGoogle = () => {
-      if (window.google?.accounts?.id && googleBtnContainerRef.current) {
-        window.google.accounts.id.initialize({
-          client_id: GOOGLE_CLIENT_ID,
-          callback: handleGoogleResponse,
-          auto_select: false,
-          cancel_on_tap_outside: true,
-        });
-
-        window.google.accounts.id.renderButton(googleBtnContainerRef.current, {
-          theme: document.documentElement.dataset.theme === 'dark' ? 'filled_black' : 'outline',
-          size: 'large',
-          width: googleBtnContainerRef.current.offsetWidth || 388,
-          shape: 'rectangular',
-          text: 'continue_with',
-        });
-
-        googleInitializedRef.current = true;
+      if (
+        cancelled
+        || !window.google?.accounts?.id
+        || !googleBtnContainerRef.current
+        || googleInitializedRef.current
+        || googleSignInInitializedForClient === GOOGLE_CLIENT_ID
+      ) {
+        return;
       }
+
+      googleBtnContainerRef.current.innerHTML = '';
+
+      window.google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: (response) => handleGoogleResponseRef.current(response),
+        auto_select: false,
+        cancel_on_tap_outside: true,
+      });
+
+      window.google.accounts.id.renderButton(googleBtnContainerRef.current, {
+        theme: document.documentElement.dataset.theme === 'dark' ? 'filled_black' : 'outline',
+        size: 'large',
+        width: googleBtnContainerRef.current.offsetWidth || 388,
+        shape: 'rectangular',
+        text: 'continue_with',
+      });
+
+      googleInitializedRef.current = true;
+      googleSignInInitializedForClient = GOOGLE_CLIENT_ID;
     };
 
     if (window.google?.accounts?.id) {
       initAndRenderGoogle();
-      return;
+      return () => {
+        cancelled = true;
+      };
     }
 
     const interval = setInterval(() => {
@@ -402,8 +424,12 @@ export const AuthScreen = ({ mode = 'login', onAuthSuccess, onNavigate, onGoogle
         clearInterval(interval);
       }
     }, 200);
-    return () => clearInterval(interval);
-  }, [GOOGLE_CLIENT_ID, handleGoogleResponse]);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [GOOGLE_CLIENT_ID]);
 
   const handleSubmit = async (e) => {
     e?.preventDefault?.();
