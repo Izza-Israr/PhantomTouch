@@ -6,17 +6,18 @@
   "functions": {
     "api/index.js": {
       "memory": 1024,
+      "maxDuration": 30,
       "includeFiles": "**"
     }
   },
   "rewrites": [
     {
-      "source": "/api/(.*)",
-      "destination": "/api/index"
+      "source": "/api/:path*",
+      "destination": "/api"
     },
     {
       "source": "/(.*)",
-      "destination": "/api/index"
+      "destination": "/api"
     }
   ]
 }

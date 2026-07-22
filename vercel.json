@@ -7,13 +7,25 @@
   "functions": {
     "api/index.js": {
       "memory": 1024,
+      "maxDuration": 30,
       "includeFiles": "backend/**"
     }
   },
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Cross-Origin-Opener-Policy",
+          "value": "same-origin-allow-popups"
+        }
+      ]
+    }
+  ],
   "rewrites": [
     {
-      "source": "/api/(.*)",
-      "destination": "/api/index"
+      "source": "/api/:path*",
+      "destination": "/api"
     },
     {
       "source": "/((?!api/).*)",

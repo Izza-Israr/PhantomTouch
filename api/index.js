@@ -1,10 +1,4 @@
-const serverless = require('serverless-http');
-
-// Vercel sets VERCEL=1; keep local `node backend/server.js` behavior unchanged.
 process.env.VERCEL = process.env.VERCEL || '1';
 
-const app = require('../backend/server');
-
-module.exports = serverless(app, {
-  binary: ['image/*', 'application/octet-stream'],
-});
+// Vercel's Node runtime can host Express apps directly.
+module.exports = require('../backend/server');

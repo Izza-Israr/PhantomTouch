@@ -4,20 +4,17 @@ import axios from 'axios';
 const resolveApiBaseUrl = () => {
   const fromEnv = (import.meta.env.VITE_API_BASE_URL || '').trim();
   if (fromEnv) return fromEnv.replace(/\/$/, '');
-
-  if (typeof window !== 'undefined') {
-    const host = window.location.hostname;
-    // Fallback for Vercel frontend deployments when env is missing.
-    if (host.includes('frontend') && host.endsWith('.vercel.app')) {
-      return 'https://phantom-touch-backend.vercel.app';
-    }
-  }
-
+  // Single Vercel project: use same-origin /api routes.
   return '';
 };
 
-axios.defaults.baseURL = resolveApiBaseUrl();
-axios.defaults.timeout = 15000;
+const apiBaseUrl = resolveApiBaseUrl();
+axios.defaults.baseURL = apiBaseUrl;
+axios.defaults.timeout = 20000;
+
+if (typeof window !== 'undefined') {
+  window.__PHANTOM_API_BASE__ = apiBaseUrl || window.location.origin;
+}
 
 import { LandingScreen } from './components/LandingScreen';
 import { AuthScreen } from './components/AuthScreen';
