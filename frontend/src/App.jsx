@@ -1,7 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 
-axios.defaults.baseURL = import.meta.env.VITE_API_BASE_URL || '';
+const resolveApiBaseUrl = () => {
+  const fromEnv = (import.meta.env.VITE_API_BASE_URL || '').trim();
+  if (fromEnv) return fromEnv.replace(/\/$/, '');
+
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname;
+    // Fallback for Vercel frontend deployments when env is missing.
+    if (host.includes('frontend') && host.endsWith('.vercel.app')) {
+      return 'https://phantom-touch-backend.vercel.app';
+    }
+  }
+
+  return '';
+};
+
+axios.defaults.baseURL = resolveApiBaseUrl();
+axios.defaults.timeout = 15000;
 
 import { LandingScreen } from './components/LandingScreen';
 import { AuthScreen } from './components/AuthScreen';

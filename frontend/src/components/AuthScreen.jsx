@@ -348,6 +348,10 @@ export const AuthScreen = ({ mode = 'login', onAuthSuccess, onNavigate, onGoogle
       }
     } catch (err) {
       console.error('Google auth failed:', err);
+      if (err.code === 'ECONNABORTED') {
+        setError('Google sign-in timed out while contacting the server. Please try again.');
+        return;
+      }
       const needsRegistration = err.response?.status === 404 || err.response?.data?.needsRegistration;
       if (needsRegistration) {
         setEmail(err.response?.data?.email || '');
@@ -470,6 +474,10 @@ export const AuthScreen = ({ mode = 'login', onAuthSuccess, onNavigate, onGoogle
       }
     } catch (err) {
       console.error('Authentication request failed:', err);
+      if (err.code === 'ECONNABORTED') {
+        setError('Request timed out. Please try again in a few seconds.');
+        return;
+      }
       const needsRegistration = (err.response?.status === 404 || err.response?.data?.needsRegistration) && isLogin;
       if (needsRegistration) {
         setEmail(err.response?.data?.email || email);
