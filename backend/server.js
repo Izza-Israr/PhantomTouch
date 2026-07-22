@@ -1,7 +1,6 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const supabase = require('./utils/supabaseClient');
 const { hashPassword } = require('./utils/authHelper');
 
 const app = express();
@@ -36,6 +35,7 @@ app.get('/api/health', (req, res) => {
 
 async function seedDatabase() {
   try {
+    const supabase = require('./utils/supabaseClient');
     const { count, error: countError } = await supabase
       .from('hospitals')
       .select('*', { count: 'exact', head: true });

@@ -4,7 +4,8 @@
     "private": true,
     "workspaces": [
         "frontend",
-        "backend"
+        "backend",
+        "api"
     ],
     "scripts": {
         "dev": "npm --workspace frontend run dev",
@@ -13,6 +14,12 @@
         "vercel-build": "npm run build"
     },
     "dependencies": {
+        "@supabase/ssr": "^0.12.0",
+        "@supabase/supabase-js": "^2.110.0",
+        "cors": "^2.8.6",
+        "dotenv": "^17.4.2",
+        "express": "^5.2.1",
+        "google-auth-library": "^10.9.0",
         "serverless-http": "^3.0.0"
     }
 }

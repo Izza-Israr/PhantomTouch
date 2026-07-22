@@ -1,9 +1,8 @@
 const serverless = require('serverless-http');
 
-// Vercel sets VERCEL=1; keep local `node backend/server.js` behavior unchanged.
 process.env.VERCEL = process.env.VERCEL || '1';
 
-const app = require('../backend/server');
+const app = require('../server');
 
 module.exports = serverless(app, {
   binary: ['image/*', 'application/octet-stream'],
