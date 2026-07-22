@@ -139,7 +139,10 @@ export const LandingScreen = ({ onNavigate }) => {
       handleLandingVoiceCommand(t, recognition);
     };
 
-    recognition.onerror = (e) => console.warn('Landing recognition error', e);
+    recognition.onerror = (e) => {
+      if (e.error === 'aborted') return;
+      console.warn('Landing recognition error', e);
+    };
     recognition.onend = () => {
       if (recognitionRef.current) {
         try { recognition.start(); } catch (e) { console.warn('Could not restart landing recognition', e); }

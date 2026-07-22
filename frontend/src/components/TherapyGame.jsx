@@ -437,7 +437,7 @@ export const TherapyGame = ({ profile, onNavigate }) => {
       }
     }
 
-    
+
   }, [sceneRef, isPaused, practiceMode]);
 
   const selectSide = useCallback((side) => {
@@ -748,7 +748,7 @@ export const TherapyGame = ({ profile, onNavigate }) => {
 
   const startSession = useCallback(() => {
     sessionEndInProgressRef.current = false;
-    statsRef.current = { hits: 0, spawned: practiceMode === 'game' ? 1 : 0, startTime: Date.now(), endTime: null, peakROM: 0, telemetry: [], startPos: null, startAngles: {} };    configRef.current.hoverAccumMs = 0;
+    statsRef.current = { hits: 0, spawned: practiceMode === 'game' ? 1 : 0, startTime: Date.now(), endTime: null, peakROM: 0, telemetry: [], startPos: null, startAngles: {} }; configRef.current.hoverAccumMs = 0;
     configRef.current.bilateralRecordingMode = false;
     const duration = configRef.current.prescribedDuration || 120;
     setTargetsHit(0);
@@ -880,16 +880,16 @@ export const TherapyGame = ({ profile, onNavigate }) => {
             >
               Change Mode
             </button>
-            
-          {amputationSide !== 'BILATERAL' && (
-            <button
-              className="btn btn-secondary"
-              style={{ padding: '10px 22px' }}
-              onClick={() => selectSide(null)}
-            >
-               Change Side
-            </button>
-          )}
+
+            {amputationSide !== 'BILATERAL' && (
+              <button
+                className="btn btn-secondary"
+                style={{ padding: '10px 22px' }}
+                onClick={() => selectSide(null)}
+              >
+                Change Side
+              </button>
+            )}
             {amputationSide === 'BILATERAL' && (
               <button
                 className="btn btn-secondary"

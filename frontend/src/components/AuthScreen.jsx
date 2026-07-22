@@ -118,6 +118,8 @@ export const AuthScreen = ({ mode = 'login', onAuthSuccess, onNavigate, onGoogle
   const voiceActiveRef = useRef(false);
   const processVoiceCommandRef = useRef(null);
   const formSnapshotRef = useRef({});
+  const googleBtnContainerRef = useRef(null);
+  const googleInitializedRef = useRef(false);
   const lastVoiceCommandRef = useRef('');
   const isSpeakingRef = useRef(false);
 
@@ -138,7 +140,6 @@ export const AuthScreen = ({ mode = 'login', onAuthSuccess, onNavigate, onGoogle
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState('');
-  const googleBtnContainerRef = useRef(null);
 
   const speak = useCallback((text) => {
     setVoicePrompt(text);
@@ -367,7 +368,7 @@ export const AuthScreen = ({ mode = 'login', onAuthSuccess, onNavigate, onGoogle
 
   // Initialize Google Identity Services and render official button
   useEffect(() => {
-    if (!GOOGLE_CLIENT_ID) return;
+    if (!GOOGLE_CLIENT_ID || googleInitializedRef.current) return;
 
     const initAndRenderGoogle = () => {
       if (window.google?.accounts?.id && googleBtnContainerRef.current) {
@@ -385,23 +386,24 @@ export const AuthScreen = ({ mode = 'login', onAuthSuccess, onNavigate, onGoogle
           shape: 'rectangular',
           text: 'continue_with',
         });
+
+        googleInitializedRef.current = true;
       }
     };
 
-    // If script already loaded
     if (window.google?.accounts?.id) {
       initAndRenderGoogle();
-    } else {
-      // Wait for script to load
-      const interval = setInterval(() => {
-        if (window.google?.accounts?.id) {
-          initAndRenderGoogle();
-          clearInterval(interval);
-        }
-      }, 200);
-      return () => clearInterval(interval);
+      return;
     }
-  }, [isLogin, handleGoogleResponse]);
+
+    const interval = setInterval(() => {
+      if (window.google?.accounts?.id) {
+        initAndRenderGoogle();
+        clearInterval(interval);
+      }
+    }, 200);
+    return () => clearInterval(interval);
+  }, [GOOGLE_CLIENT_ID, handleGoogleResponse]);
 
   const handleSubmit = async (e) => {
     e?.preventDefault?.();
@@ -473,17 +475,17 @@ export const AuthScreen = ({ mode = 'login', onAuthSuccess, onNavigate, onGoogle
     const flow = snapshot.isLogin
       ? ['loginEmail', 'loginPassword', 'ready']
       : [
-          'registerName',
-          'registerEmail',
-          'registerPassword',
-          'registerRole',
-          ...(snapshot.role === 'CLINICIAN'
-            ? ['clinicianLicense', 'clinicianSpecialty']
-            : ['patientSide', ...(snapshot.amputationSide === 'BILATERAL'
-              ? ['bilateralLeftLevel', 'bilateralRightLevel']
-              : ['patientLevel']), 'patientDob', ...(snapshot.amputationLevel === 'FINGER_AMPUTATION' ? ['patientFingers'] : [])]),
-          'ready',
-        ];
+        'registerName',
+        'registerEmail',
+        'registerPassword',
+        'registerRole',
+        ...(snapshot.role === 'CLINICIAN'
+          ? ['clinicianLicense', 'clinicianSpecialty']
+          : ['patientSide', ...(snapshot.amputationSide === 'BILATERAL'
+            ? ['bilateralLeftLevel', 'bilateralRightLevel']
+            : ['patientLevel']), 'patientDob', ...(snapshot.amputationLevel === 'FINGER_AMPUTATION' ? ['patientFingers'] : [])]),
+        'ready',
+      ];
     const index = flow.indexOf(snapshot.voiceStep);
     if (index <= 0) {
       onNavigate?.('landing');

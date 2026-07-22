@@ -1,18 +1,18 @@
 {
-  "name": "phantomtouch",
-  "version": "1.0.0",
-  "private": true,
-  "workspaces": [
-    "frontend",
-    "backend"
-  ],
-  "scripts": {
-    "dev": "npm --workspace frontend run dev",
-    "start": "npm --workspace backend run start",
-    "build": "npm --workspace frontend run build",
-    "vercel-build": "npm run build"
-  },
-  "dependencies": {
-    "serverless-http": "^3.0.0"
-  }
+    "name": "phantomtouch",
+    "version": "1.0.0",
+    "private": true,
+    "workspaces": [
+        "frontend",
+        "backend"
+    ],
+    "scripts": {
+        "dev": "npm --workspace frontend run dev",
+        "start": "npm --workspace backend run start",
+        "build": "npm --workspace frontend run build",
+        "vercel-build": "npm run build"
+    },
+    "dependencies": {
+        "serverless-http": "^3.0.0"
+    }
 }

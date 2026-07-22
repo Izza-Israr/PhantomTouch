@@ -217,7 +217,7 @@ export const ClinicianDashboard = ({ user, profile, theme, onToggleTheme, view }
 
   const renderReportRows = (sessions) => sessions.map((session, index) => {
     const isCameraSession = session.sessionType === 'CAMERA';
-    const score = session.therapyScore != null ? Math.round(session.therapyScore) : null;    return (
+    const score = session.therapyScore != null ? Math.round(session.therapyScore) : null; return (
       <tr key={session._id || session.id || index}>
         <td>{formatShortDate(session.startTime)}</td>
         <td style={{ color: 'var(--text-muted)' }}>{formatShortTime(session.startTime)}</td>
