@@ -22,6 +22,14 @@ app.use('/api/prescriptions', prescriptionRoutes);
 app.use('/api/sessions', sessionRoutes);
 app.use('/api/notifications', notificationRoutes);
 
+app.get('/', (req, res) => {
+  res.json({ status: 'ok', message: 'PhantomTouch backend root. Use /api/* routes.' });
+});
+
+app.get('/api', (req, res) => {
+  res.json({ status: 'ok', message: 'PhantomTouch API root. Use /api/auth, /api/health, etc.' });
+});
+
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'PhantomTouch backend is running' });
 });
