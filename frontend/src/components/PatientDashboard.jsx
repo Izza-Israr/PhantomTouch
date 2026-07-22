@@ -48,7 +48,7 @@ const CircularProgressCard = ({ value, label, sublabel, percentage, strokeColor 
   );
 };
 
-export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, theme, onToggleTheme, view = 'overview', onSetDashboardView }) => {
+export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, theme, onToggleTheme, view = 'overview', onSetDashboardView, appVoiceEnabled, onDisableAppVoice }) => {
   const [sessions, setSessions] = useState([]);
   const [prescription, setPrescription] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -68,6 +68,8 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
   const [patientDetail, setPatientDetail] = useState(null);
   const [doctorEmailInput, setDoctorEmailInput] = useState('');
   const [doctorLookupState, setDoctorLookupState] = useState({ status: 'idle', message: '' });
+
+  const authorizedClinicianName = prescription?.clinician?.fullName || patientDetail?.assignedClinician?.fullName || 'Self';
 
   const formatToPakistanTime = useCallback((value, options = {}) => {
     if (!value) return '';
@@ -456,22 +458,26 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
       </div>
       <div className="prescription-footer">
         <span>Authorized by</span>
-        {prescription?.clinicianId && (
-          <strong>{prescription.clinicianId.fullName}</strong>
-        )}
-        {!prescription?.clinicianId && <strong>Assigned clinician</strong>}
+        <strong>{authorizedClinicianName}</strong>
       </div>
     </div>
   );
 
   return (
     <div className="clinical-dashboard animate-fade-in" style={{ padding: '24px 0 60px' }}>
-      <div className="dashboard-status-row" style={{ display: 'flex', gap: '10px', marginBottom: '24px' }}>
-        <div className="status-pill status-active">
-          <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: 'var(--accent-cyan)' }} />
-          Tracking Active
+      <div className="dashboard-status-row" style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '24px', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+          <div className="status-pill status-active">
+            <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: 'var(--accent-cyan)' }} />
+            Tracking Active
+          </div>
+          <div className="status-pill status-date">{formatToPakistanTime(new Date(), { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} PST</div>
         </div>
-        <div className="status-pill status-date">{formatToPakistanTime(new Date(), { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} PST</div>
+        {profile?.amputationSide !== 'BILATERAL' && appVoiceEnabled && onDisableAppVoice && (
+          <button type="button" className="btn btn-secondary" onClick={onDisableAppVoice} style={{ padding: '10px 18px', borderRadius: '14px', whiteSpace: 'nowrap' }}>
+            Turn off voice recognition
+          </button>
+        )}
       </div>
 
       {view === 'overview' && (
@@ -513,13 +519,18 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
                 Browser-based rehabilitation using real-time hand tracking and a 3D phantom limb.
                 Reduce pain, improve range of motion, and track progress — all from your browser.
               </p>
-              <div style={{ display: 'flex', gap: '12px' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
                 <button className="btn btn-primary" onClick={() => onNavigate('game')} style={{ padding: '12px 28px', borderRadius: '14px' }}>
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                     <polygon points="6 3 20 12 6 21 6 3" />
                   </svg>
                   Start Therapy
                 </button>
+                {profile?.amputationSide !== 'BILATERAL' && appVoiceEnabled && onDisableAppVoice && (
+                  <button className="btn btn-secondary" onClick={onDisableAppVoice} style={{ padding: '12px 28px', borderRadius: '14px', border: '1px solid var(--border-color)' }}>
+                    Turn off voice recognition
+                  </button>
+                )}
                 <button className="btn btn-secondary" onClick={() => (onSetDashboardView ? onSetDashboardView('statistics') : onNavigate('dashboard'))} style={{ padding: '12px 28px', borderRadius: '14px', border: '1px solid var(--border-color)' }}>
                   View Progress
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -626,7 +637,7 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
               </div>
             </div>
 
-            
+
 
             <div className="horizontal-metric-tile">
               <div className="horizontal-metric-icon color-orange">
@@ -695,7 +706,7 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
                   </div>
                   <div>
                     <h3 style={{ fontSize: '1.15rem', fontWeight: 800 }}>Doctor Notes</h3>
-                    <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>{prescription?.clinicianId?.fullName || ''} · {prescription?.prescribedAt ? formatToPakistanTime(prescription.prescribedAt, { month: 'short', day: 'numeric', year: 'numeric' }) : ''}</p>
+                    <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>{authorizedClinicianName}{prescription?.prescribedAt ? ` · ${formatToPakistanTime(prescription.prescribedAt, { month: 'short', day: 'numeric', year: 'numeric' })}` : ''}</p>
                   </div>
                 </div>
                 <div style={{

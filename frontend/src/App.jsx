@@ -152,6 +152,15 @@ function App() {
     setScreen('dashboard');
   };
 
+  const handleDisableAppVoice = useCallback(() => {
+    setAppVoiceEnabled(false);
+    localStorage.setItem('voiceMode', 'false');
+    if (appVoiceRecognitionRef.current) {
+      try { appVoiceRecognitionRef.current.stop(); } catch (e) { console.warn('Could not stop app voice recognition', e); }
+      appVoiceRecognitionRef.current = null;
+    }
+  }, []);
+
   const fetchNotifications = async () => {
     try {
       const res = await axios.get('http://localhost:5000/api/notifications');
@@ -211,11 +220,11 @@ function App() {
   const explainAppVoiceScript = useCallback(() => {
     speakApp(
       profile?.amputationSide === 'BILATERAL'
-        ? 'Voice mode is active. Say dashboard, scroll down, scroll up, therapy session, therapy game, camera mirror, or record pose. During therapy say start therapy, raise hands, lower hands, open hand, clench fist, victory, thumbs up, point, pinch, pain level is followed by a number, pause, resume, end session, end game, or reach target.'
-        : 'Voice mode is active. Say dashboard, scroll down, scroll up, therapy session, therapy game, or camera mirror. During therapy say start therapy, raise hands, lower hands, open hand, clench fist, victory, thumbs up, point, pinch, pain level is followed by a number, pause, resume, end session, end game, or reach target.'
+        ? 'Voice mode is active. Say dashboard, profile, progress, reports, scroll down, scroll up, switch to dark theme, switch to light theme, therapy session, therapy game, camera mirror, or record pose. During therapy say start therapy, raise hands, lower hands, open hand, clench fist, victory, thumbs up, point, pinch, pain level is followed by a number, pause, resume, or say end session to finish.'
+        : 'Voice mode is active. Say dashboard, profile, progress, reports, scroll down, scroll up, switch to dark theme, switch to light theme, therapy session, therapy game, or camera mirror. During therapy say start therapy, pain level is followed by a number, pause, resume, or say end session to finish. Press the button to turn off voice recognition when you want to stop speaking commands.'
     );
   }, [speakApp, profile]);
-  
+
   const processAppVoiceCommand = useCallback((spokenText) => {
     const text = spokenText.toLowerCase().replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
     const now = Date.now();
@@ -225,22 +234,44 @@ function App() {
 
     window.dispatchEvent(new CustomEvent('phantomtouch:voice-command', { detail: { text } }));
 
+    if (profile?.amputationSide !== 'BILATERAL' && (text.includes('turn off voice') || text.includes('stop voice mode'))) {
+      speakApp('Please press the turn off voice recognition button to stop voice mode.');
+      return;
+    }
     if (text.includes('turn off voice') || text.includes('stop voice mode')) {
       setAppVoiceEnabled(false);
       localStorage.setItem('voiceMode', 'false');
       speakApp('Voice mode turned off.');
       return;
     }
-    if (text.includes('help') || text.includes('what can i say')) {
+    if (text.includes('help') || text.includes('what can i say') || text.includes('what can i do')) {
       explainAppVoiceScript();
       return;
     }
-    if (text.includes('scroll down') || text.includes('page down')) {
+    if (text.includes('scroll down') || text.includes('page down') || text.includes('down')) {
       window.scrollBy({ top: Math.max(360, Math.round(window.innerHeight * 0.75)), behavior: 'smooth' });
       return;
     }
-    if (text.includes('scroll up') || text.includes('page up')) {
+    if (text.includes('scroll up') || text.includes('page up') || text.includes('up')) {
       window.scrollBy({ top: -Math.max(360, Math.round(window.innerHeight * 0.75)), behavior: 'smooth' });
+      return;
+    }
+    if (text.includes('dark theme') || text.includes('switch to dark') || text.includes('dark mode')) {
+      setTheme('dark');
+      speakApp('Dark theme enabled.');
+      return;
+    }
+    if (text.includes('light theme') || text.includes('switch to light') || text.includes('light mode')) {
+      setTheme('light');
+      speakApp('Light theme enabled.');
+      return;
+    }
+    if (text.includes('toggle theme') || text.includes('switch theme')) {
+      setTheme(prev => {
+        const next = prev === 'dark' ? 'light' : 'dark';
+        speakApp(`${next === 'dark' ? 'Dark' : 'Light'} theme enabled.`);
+        return next;
+      });
       return;
     }
 
@@ -266,8 +297,9 @@ function App() {
       speakApp('Opening camera mirror. Say start therapy when ready.');
       return;
     }
-    if (text.includes('dashboard') || text.includes('home')) {
+    if (text.includes('overview') || text.includes('dashboard') || text.includes('home')) {
       handleNavigate('dashboard');
+      setDashboardView('overview');
       speakApp('Opening dashboard.');
       return;
     }
@@ -277,7 +309,7 @@ function App() {
       speakApp('Opening sessions.');
       return;
     }
-    if (text.includes('progress') || text.includes('statistics')) {
+    if (text.includes('progress') || text.includes('statistics') || text.includes('performance')) {
       handleNavigate('dashboard');
       setDashboardView('statistics');
       speakApp('Opening progress.');
@@ -658,6 +690,8 @@ function App() {
                 onToggleTheme={() => setTheme(prev => prev === 'dark' ? 'light' : 'dark')}
                 view={dashboardView}
                 onSetDashboardView={setDashboardView}
+                appVoiceEnabled={appVoiceEnabled}
+                onDisableAppVoice={handleDisableAppVoice}
               />
             ) : (
               <ClinicianDashboard
