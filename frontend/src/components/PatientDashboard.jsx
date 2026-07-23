@@ -68,6 +68,11 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
   const [patientDetail, setPatientDetail] = useState(null);
   const [doctorEmailInput, setDoctorEmailInput] = useState('');
   const [doctorLookupState, setDoctorLookupState] = useState({ status: 'idle', message: '' });
+  const profileRef = useRef(profile);
+
+  useEffect(() => {
+    profileRef.current = profile;
+  }, [profile]);
 
   const authorizedClinicianName = prescription?.clinician?.fullName || patientDetail?.assignedClinician?.fullName || 'Self';
 
@@ -92,16 +97,19 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
   }, [profile?._id]);
 
   const fetchDashboardData = useCallback(async () => {
+    const currentProfile = profileRef.current;
+    const patientId = currentProfile?._id;
+    if (!patientId) return;
     setLoading(true);
     try {
       const config = { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } };
-      const rxRes = await axios.get(`/api/prescriptions/patient/${profile._id}`, config);
+      const rxRes = await axios.get(`/api/prescriptions/patient/${patientId}`, config);
       setPrescription(rxRes.data);
-      if (rxRes.data?.id && profile.currentPrescriptionId !== rxRes.data.id) {
-        onUpdateProfile({ ...profile, currentPrescriptionId: rxRes.data.id });
+      if (rxRes.data?.id && currentProfile.currentPrescriptionId !== rxRes.data.id) {
+        onUpdateProfile({ ...currentProfile, currentPrescriptionId: rxRes.data.id });
       }
 
-      const sessionsRes = await axios.get(`/api/sessions/patient/${profile._id}`, config);
+      const sessionsRes = await axios.get(`/api/sessions/patient/${patientId}`, config);
       setSessions(sessionsRes.data);
 
       await fetchPatientDetail();
@@ -110,7 +118,7 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
     } finally {
       setLoading(false);
     }
-  }, [onUpdateProfile, profile, fetchPatientDetail]);
+  }, [onUpdateProfile, fetchPatientDetail]);
 
   const tableRef = useRef(null);
   const progressRef = useRef(null);
