@@ -154,7 +154,7 @@ function burstParticles(scene, pos, toneHex, particlesRef) {
   }
 }
 
-export const TherapyGame = ({ profile, onNavigate }) => {
+export const TherapyGame = ({ profile, onNavigate, onSessionSaved }) => {
   const [gameState, setGameState] = useState('ready');
   const [practiceMode, setPracticeMode] = useState(() => {
     const savedMode = sessionStorage.getItem('phantomtouchPracticeMode');
@@ -741,10 +741,10 @@ export const TherapyGame = ({ profile, onNavigate }) => {
     const saved = await saveSession();
     setSessionSaved(saved);
     if (saved) {
-      speakTherapyMessage(THERAPY_VOICE_SCRIPTS.SESSION_SAVED);
+      await onSessionSaved?.();
     }
     setGameState('finished');
-  }, [destroy, practiceMode, stopRenderLoop, saveSession]);
+  }, [destroy, onSessionSaved, practiceMode, stopRenderLoop, saveSession]);
 
   const startSession = useCallback(() => {
     sessionEndInProgressRef.current = false;
