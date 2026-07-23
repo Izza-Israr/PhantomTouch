@@ -52,6 +52,7 @@ function App() {
   const appVoiceLastCommandRef = useRef('');
   const appVoiceLastCommandAtRef = useRef(0);
   const appVoiceWelcomeSpokenRef = useRef(false);
+  const appVoiceNavigationPausedRef = useRef(false);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -214,6 +215,9 @@ function App() {
       setScreen('landing');
       return;
     }
+    // Set this synchronously. It protects the therapy route from a final queued
+    // result emitted by the app-wide speech recognizer while React mounts it.
+    appVoiceNavigationPausedRef.current = targetScreen === 'game';
     setScreen(targetScreen);
     if (targetScreen === 'dashboard') setDashboardView('overview');
   }, [token]);
@@ -294,6 +298,8 @@ function App() {
     if (!text || (text === appVoiceLastCommandRef.current && now - appVoiceLastCommandAtRef.current < 1200)) return;
     appVoiceLastCommandRef.current = text;
     appVoiceLastCommandAtRef.current = now;
+
+    if (appVoiceNavigationPausedRef.current) return;
 
     window.dispatchEvent(new CustomEvent('phantomtouch:voice-command', { detail: { text } }));
 
