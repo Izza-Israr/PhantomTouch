@@ -68,11 +68,7 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
   const [patientDetail, setPatientDetail] = useState(null);
   const [doctorEmailInput, setDoctorEmailInput] = useState('');
   const [doctorLookupState, setDoctorLookupState] = useState({ status: 'idle', message: '' });
-  const profileRef = useRef(profile);
-
-  useEffect(() => {
-    profileRef.current = profile;
-  }, [profile]);
+  const loadedDashboardPatientRef = useRef(null);
 
   const authorizedClinicianName = prescription?.clinician?.fullName || patientDetail?.assignedClinician?.fullName || 'Self';
 
@@ -97,19 +93,16 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
   }, [profile?._id]);
 
   const fetchDashboardData = useCallback(async () => {
-    const currentProfile = profileRef.current;
-    const patientId = currentProfile?._id;
-    if (!patientId) return;
     setLoading(true);
     try {
       const config = { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } };
-      const rxRes = await axios.get(`/api/prescriptions/patient/${patientId}`, config);
+      const rxRes = await axios.get(`/api/prescriptions/patient/${profile._id}`, config);
       setPrescription(rxRes.data);
-      if (rxRes.data?.id && currentProfile.currentPrescriptionId !== rxRes.data.id) {
-        onUpdateProfile({ ...currentProfile, currentPrescriptionId: rxRes.data.id });
+      if (rxRes.data?.id && profile.currentPrescriptionId !== rxRes.data.id) {
+        onUpdateProfile({ ...profile, currentPrescriptionId: rxRes.data.id });
       }
 
-      const sessionsRes = await axios.get(`/api/sessions/patient/${patientId}`, config);
+      const sessionsRes = await axios.get(`/api/sessions/patient/${profile._id}`, config);
       setSessions(sessionsRes.data);
 
       await fetchPatientDetail();
@@ -118,7 +111,7 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
     } finally {
       setLoading(false);
     }
-  }, [onUpdateProfile, fetchPatientDetail]);
+  }, [onUpdateProfile, profile, fetchPatientDetail]);
 
   const tableRef = useRef(null);
   const progressRef = useRef(null);
@@ -204,7 +197,9 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
   };
 
   useEffect(() => {
-    if (profile?._id) fetchDashboardData();
+    if (!profile?._id || loadedDashboardPatientRef.current === profile._id) return;
+    loadedDashboardPatientRef.current = profile._id;
+    fetchDashboardData();
   }, [fetchDashboardData, profile?._id]);
 
   useEffect(() => {
