@@ -483,7 +483,7 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
       {view === 'overview' && (
         <>
           {/* Dashboard Hero Block (Image 5 style) */}
-          <div className="glass-panel" style={{
+          <div className="glass-panel dashboard-hero-surface" style={{
             display: 'grid',
             gridTemplateColumns: '1.2fr 0.8fr',
             gap: '30px',

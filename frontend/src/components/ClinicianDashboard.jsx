@@ -277,7 +277,7 @@ export const ClinicianDashboard = ({ user, profile, theme, onToggleTheme, view }
       {(!view || view === 'overview') && (
         <>
           {/* Hero-style panel, matching the patient dashboard's gradient hero block */}
-          <div className="glass-panel" style={{
+          <div className="glass-panel dashboard-hero-surface" style={{
             padding: '40px',
             background: 'linear-gradient(135deg, var(--bg-secondary) 0%, var(--surface-muted) 100%)',
             border: '1px solid var(--border-color)',
