@@ -68,6 +68,7 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
   const [patientDetail, setPatientDetail] = useState(null);
   const [doctorEmailInput, setDoctorEmailInput] = useState('');
   const [doctorLookupState, setDoctorLookupState] = useState({ status: 'idle', message: '' });
+  const loadedDashboardPatientRef = useRef(null);
 
   const authorizedClinicianName = prescription?.clinician?.fullName || patientDetail?.assignedClinician?.fullName || 'Self';
 
@@ -196,7 +197,9 @@ export const PatientDashboard = ({ user, profile, onUpdateProfile, onNavigate, t
   };
 
   useEffect(() => {
-    if (profile?._id) fetchDashboardData();
+    if (!profile?._id || loadedDashboardPatientRef.current === profile._id) return;
+    loadedDashboardPatientRef.current = profile._id;
+    fetchDashboardData();
   }, [fetchDashboardData, profile?._id]);
 
   useEffect(() => {
