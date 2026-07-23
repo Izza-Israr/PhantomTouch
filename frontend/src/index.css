@@ -78,11 +78,6 @@
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.4);
   --shadow-premium: 0 20px 25px -5px rgba(0, 0, 0, 0.45);
-  --dashboard-glass: rgba(15, 23, 42, 0.72);
-}
-
-:root {
-  --dashboard-glass: rgba(255, 255, 255, 0.74);
 }
 
 * {
@@ -588,6 +583,43 @@ label {
 @keyframes mirrorHudEnter { from { opacity: 0; transform: translateY(-12px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes mirrorLockEnter { from { opacity: 0; transform: translate(-50%, -12px); } to { opacity: 1; transform: translateX(-50%); } }
 
+/* Gentle hover lift across dashboard surfaces. */
+.clinical-dashboard .glass-panel,
+.clinical-dashboard .metric-tile,
+.clinical-dashboard .circular-metric-card,
+.clinical-dashboard .horizontal-metric-tile,
+.clinical-dashboard .patient-grid-card,
+.clinical-dashboard .dashboard-prescription-card,
+.clinical-dashboard .practice-mode-card,
+.clinical-dashboard .session-summary {
+  will-change: transform;
+  transition: transform 180ms var(--ease-out-expo), box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.clinical-dashboard .glass-panel:hover,
+.clinical-dashboard .metric-tile:hover,
+.clinical-dashboard .circular-metric-card:hover,
+.clinical-dashboard .horizontal-metric-tile:hover,
+.clinical-dashboard .patient-grid-card:hover,
+.clinical-dashboard .dashboard-prescription-card:hover,
+.clinical-dashboard .practice-mode-card:hover,
+.clinical-dashboard .session-summary:hover {
+  transform: translateY(-2px);
+  border-color: var(--border-hover) !important;
+  box-shadow: var(--shadow-premium);
+}
+
+.clinical-dashboard .glass-panel:active,
+.clinical-dashboard .metric-tile:active,
+.clinical-dashboard .circular-metric-card:active,
+.clinical-dashboard .horizontal-metric-tile:active,
+.clinical-dashboard .patient-grid-card:active,
+.clinical-dashboard .dashboard-prescription-card:active,
+.clinical-dashboard .practice-mode-card:active,
+.clinical-dashboard .session-summary:active {
+  transform: translateY(0) scale(0.995);
+}
+
 /* Digital Mirror canvas: a softly lit 3D grid and reflected signal rings. */
 .dashboard-hero-surface {
   position: relative;
@@ -650,79 +682,9 @@ label {
   to { background-position: 30px 30px, 30px 30px; }
 }
 
-/* Full dashboard canvas: PhantomTouch's mirrored hand becomes a low-key 3D landmark. */
-.digital-mirror-background {
-  position: relative;
-  isolation: isolate;
-  min-height: calc(100vh - 120px);
-}
-
-.digital-mirror-background::before,
-.digital-mirror-background::after {
-  content: '';
-  position: absolute;
-  pointer-events: none;
-  z-index: 0;
-}
-
-.digital-mirror-background::before {
-  inset: 44px -110px auto auto;
-  width: min(58vw, 760px);
-  aspect-ratio: 1;
-  background: url('/short logo.png') center / contain no-repeat;
-  opacity: 0.19;
-  filter: saturate(1.35) contrast(1.12) drop-shadow(0 30px 38px var(--accent-cyan-glow));
-  transform: perspective(1200px) rotateY(-20deg) rotateX(8deg) rotateZ(-5deg);
-  transform-origin: center;
-  animation: logoFloat 12s ease-in-out infinite;
-}
-
-.digital-mirror-background::after {
-  inset: 0;
-  opacity: 0.35;
-  background:
-    radial-gradient(ellipse 42% 28% at 76% 18%, var(--accent-cyan-dim), transparent 72%),
-    radial-gradient(ellipse 36% 24% at 18% 76%, var(--accent-purple-dim), transparent 72%),
-    linear-gradient(118deg, transparent 20%, var(--accent-cyan-dim) 20.15%, transparent 20.5%);
-}
-
-.digital-mirror-background > * {
-  position: relative;
-  z-index: 1;
-}
-
-.digital-mirror-background .glass-panel,
-.digital-mirror-background .metric-tile,
-.digital-mirror-background .circular-metric-card,
-.digital-mirror-background .horizontal-metric-tile,
-.digital-mirror-background .patient-grid-card,
-.digital-mirror-background .practice-mode-card {
-  background: var(--dashboard-glass) !important;
-  -webkit-backdrop-filter: blur(14px) saturate(140%);
-  backdrop-filter: blur(14px) saturate(140%);
-  border-color: color-mix(in srgb, var(--border-color) 78%, var(--accent-cyan) 22%) !important;
-}
-
-.digital-mirror-background .dashboard-hero-surface {
-  background: linear-gradient(135deg, color-mix(in srgb, var(--bg-secondary) 74%, transparent), color-mix(in srgb, var(--surface-muted) 58%, transparent)) !important;
-  -webkit-backdrop-filter: blur(10px) saturate(150%);
-  backdrop-filter: blur(10px) saturate(150%);
-}
-
-.digital-mirror-background .session-table th,
-.digital-mirror-background .session-table td {
-  background-color: transparent;
-}
-
-@keyframes logoFloat {
-  0%, 100% { transform: perspective(1200px) rotateY(-20deg) rotateX(8deg) rotateZ(-5deg) translate3d(0, 0, 0); }
-  50% { transform: perspective(1200px) rotateY(-13deg) rotateX(4deg) rotateZ(-2deg) translate3d(-18px, 16px, 40px); }
-}
-
 @media (max-width: 680px) {
   .dashboard-hero-surface::before { right: -140px; bottom: -170px; opacity: 0.24; }
   .dashboard-hero-surface::after { width: 100%; right: -30%; opacity: 0.25; }
-  .digital-mirror-background::before { width: 118vw; top: 140px; right: -52vw; opacity: 0.13; }
 }
 
 /* Glowing text elements */

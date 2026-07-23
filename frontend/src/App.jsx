@@ -677,7 +677,7 @@ function App() {
 
       {/* Main Content Router */}
       <main className={token && screen === 'dashboard' ? 'app-main' : ''} style={{ flexGrow: 1 }}>
-        <div key={`${screen}-${screen === 'dashboard' ? dashboardView : ''}`} className={`${token && screen === 'dashboard' ? 'dashboard-page digital-mirror-background ' : ''}screen-transition`}>
+        <div key={`${screen}-${screen === 'dashboard' ? dashboardView : ''}`} className={`${token && screen === 'dashboard' ? 'dashboard-page ' : ''}screen-transition`}>
           {screen === 'landing' && <LandingScreen onNavigate={handleNavigate} />}
 
           {(screen === 'login' || screen === 'register') && (
