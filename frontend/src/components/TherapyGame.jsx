@@ -154,8 +154,7 @@ function burstParticles(scene, pos, toneHex, particlesRef) {
   }
 }
 
-
-export const TherapyGame = ({ profile, onNavigate, onSessionSaved }) => {
+export const TherapyGame = ({ profile, onNavigate }) => {
   const [gameState, setGameState] = useState('ready');
   const [practiceMode, setPracticeMode] = useState(() => {
     const savedMode = sessionStorage.getItem('phantomtouchPracticeMode');

@@ -233,53 +233,6 @@ function App() {
     }
   }, []);
 
-  const playNotificationChime = useCallback(() => {
-    try {
-      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-      if (!AudioContextClass) return;
-      const audioContext = new AudioContextClass();
-      const gain = audioContext.createGain();
-      gain.connect(audioContext.destination);
-      gain.gain.setValueAtTime(0.0001, audioContext.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.12, audioContext.currentTime + 0.015);
-      gain.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + 0.72);
-
-      [880, 1174.66].forEach((frequency, index) => {
-        const oscillator = audioContext.createOscillator();
-        oscillator.type = 'sine';
-        oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime + index * 0.12);
-        oscillator.connect(gain);
-        oscillator.start(audioContext.currentTime + index * 0.12);
-        oscillator.stop(audioContext.currentTime + 0.62);
-      });
-
-      window.setTimeout(() => audioContext.close(), 900);
-    } catch (error) {
-      console.debug('Notification chime unavailable:', error);
-    }
-  }, []);
-
-  const handleSessionSavedNotification = useCallback(async () => {
-    // The session endpoint creates the notification before returning, so this
-    // refresh makes the bell badge update as soon as the session is saved.
-    await fetchNotifications();
-    setNotificationRinging(false);
-    window.requestAnimationFrame(() => setNotificationRinging(true));
-    window.setTimeout(() => setNotificationRinging(false), 1500);
-    playNotificationChime();
-  }, [fetchNotifications, playNotificationChime]);
-
-  useEffect(() => {
-    if (!token || !user) {
-      setNotifications([]);
-      return undefined;
-    }
-
-    fetchNotifications();
-    const refreshId = window.setInterval(fetchNotifications, 20000);
-    return () => window.clearInterval(refreshId);
-  }, [fetchNotifications, token, user]);
-
   const explainAppVoiceScript = useCallback(() => {
     speakApp(
       profile?.amputationSide === 'BILATERAL'
@@ -775,7 +728,6 @@ function App() {
               user={user}
               profile={profile}
               onNavigate={handleNavigate}
-              onSessionSaved={handleSessionSavedNotification}
             />
           )}
         </div>
