@@ -204,9 +204,9 @@ function App() {
     }
   };
 
-  const handleUpdateProfile = (updatedProfile) => {
+  const handleUpdateProfile = useCallback((updatedProfile) => {
     setProfile(updatedProfile);
-  };
+  }, []);
 
   const handleNavigate = useCallback((targetScreen) => {
     // If not authenticated, restrict dashboard and game screens
@@ -277,8 +277,7 @@ function App() {
     }
 
     fetchNotifications();
-    const refreshId = window.setInterval(fetchNotifications, 20000);
-    return () => window.clearInterval(refreshId);
+    return undefined;
   }, [fetchNotifications, token, user]);
 
   const explainAppVoiceScript = useCallback(() => {
