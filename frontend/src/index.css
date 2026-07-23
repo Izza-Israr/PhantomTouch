@@ -435,8 +435,12 @@ label {
 
 @keyframes spinner { to { transform: rotate(360deg); } }
 
-.status-pill.status-active > span:first-child {
-  flex: 0 0 auto;
+.status-pill.status-active::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
   box-shadow: 0 0 0 0 var(--accent-cyan-glow);
   animation: statusPulse 2s ease-out infinite;
 }
@@ -582,73 +586,6 @@ label {
 .mirror-lock-indicator { animation: mirrorLockEnter 460ms 160ms var(--ease-out-expo) both; }
 @keyframes mirrorHudEnter { from { opacity: 0; transform: translateY(-12px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes mirrorLockEnter { from { opacity: 0; transform: translate(-50%, -12px); } to { opacity: 1; transform: translateX(-50%); } }
-
-/* Digital Mirror canvas: a softly lit 3D grid and reflected signal rings. */
-.dashboard-hero-surface {
-  position: relative;
-  isolation: isolate;
-  overflow: hidden;
-  background:
-    radial-gradient(circle at 82% 18%, var(--accent-cyan-dim), transparent 28%),
-    linear-gradient(135deg, var(--bg-secondary) 0%, var(--surface-muted) 100%) !important;
-}
-
-.dashboard-hero-surface::before,
-.dashboard-hero-surface::after {
-  content: '';
-  position: absolute;
-  pointer-events: none;
-  z-index: -1;
-}
-
-.dashboard-hero-surface::before {
-  width: 310px;
-  height: 310px;
-  right: -84px;
-  bottom: -142px;
-  border: 1px solid var(--accent-cyan);
-  border-radius: 50%;
-  opacity: 0.32;
-  box-shadow:
-    0 0 0 28px var(--accent-cyan-dim),
-    0 0 0 56px var(--accent-purple-dim),
-    0 0 54px 12px var(--accent-cyan-glow);
-  transform: rotateX(62deg) rotateZ(-25deg);
-  animation: mirrorSignalFloat 7s ease-in-out infinite;
-}
-
-.dashboard-hero-surface::after {
-  right: -8%;
-  bottom: -56%;
-  width: 66%;
-  height: 94%;
-  opacity: 0.45;
-  background-image:
-    linear-gradient(var(--accent-cyan-glow) 1px, transparent 1px),
-    linear-gradient(90deg, var(--accent-cyan-glow) 1px, transparent 1px);
-  background-size: 30px 30px;
-  mask-image: linear-gradient(to bottom, transparent 0%, #000 36%, #000 100%);
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 36%, #000 100%);
-  transform: perspective(430px) rotateX(62deg) rotateZ(-7deg);
-  transform-origin: bottom right;
-  animation: mirrorGridDrift 12s linear infinite;
-}
-
-.dashboard-hero-surface > * { position: relative; z-index: 1; }
-
-@keyframes mirrorSignalFloat {
-  0%, 100% { transform: rotateX(62deg) rotateZ(-25deg) translate3d(0, 0, 0); }
-  50% { transform: rotateX(62deg) rotateZ(-18deg) translate3d(-10px, -12px, 0); }
-}
-
-@keyframes mirrorGridDrift {
-  to { background-position: 30px 30px, 30px 30px; }
-}
-
-@media (max-width: 680px) {
-  .dashboard-hero-surface::before { right: -140px; bottom: -170px; opacity: 0.24; }
-  .dashboard-hero-surface::after { width: 100%; right: -30%; opacity: 0.25; }
-}
 
 /* Glowing text elements */
 .text-glow-purple {
