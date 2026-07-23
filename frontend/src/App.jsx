@@ -405,7 +405,10 @@ function App() {
   }, [explainAppVoiceScript, screen, token, user]);
 
   useEffect(() => {
-    if (!token || !user || !appVoiceEnabled || screen === 'landing' || screen === 'login' || screen === 'register' || screen === 'profileSetup') {
+    // TherapyGame owns its own voice recognition. Keeping the app-wide listener
+    // active here can interpret ambient audio as a dashboard command while the
+    // camera is starting, which navigates away from the mirror/session screen.
+    if (!token || !user || !appVoiceEnabled || screen === 'landing' || screen === 'login' || screen === 'register' || screen === 'profileSetup' || screen === 'game') {
       if (appVoiceRecognitionRef.current) {
         try { appVoiceRecognitionRef.current.stop(); } catch (e) { console.warn('Could not stop app voice recognition', e); }
         appVoiceRecognitionRef.current = null;
