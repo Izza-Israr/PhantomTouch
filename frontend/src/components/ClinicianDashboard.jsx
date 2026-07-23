@@ -510,7 +510,6 @@ export const ClinicianDashboard = ({ user, profile, theme, onToggleTheme, view }
       {/* POPUP MODAL FOR SELECTED PATIENT RESULTS */}
       {selectedPatient && (
         <div
-          className="patient-modal-backdrop"
           style={{
             position: 'fixed',
             top: 0,
@@ -528,7 +527,6 @@ export const ClinicianDashboard = ({ user, profile, theme, onToggleTheme, view }
           onClick={() => setSelectedPatient(null)}
         >
           <div
-            className="patient-modal"
             style={{
               width: '100%',
               maxWidth: '1000px',

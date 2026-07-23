@@ -501,7 +501,6 @@ function App() {
                 {/* Theme Toggle Button */}
                 <button
                   type="button"
-                  className="header-icon-button theme-toggle-button"
                   onClick={() => setTheme(prev => prev === 'dark' ? 'light' : 'dark')}
                   style={{
                     background: 'transparent',
@@ -537,7 +536,6 @@ function App() {
                 <div style={{ position: 'relative' }}>
                   <button
                     type="button"
-                    className="header-icon-button notification-toggle-button"
                     onClick={toggleNotifications}
                     style={{
                       background: 'transparent',
@@ -575,7 +573,7 @@ function App() {
                   </button>
 
                   {showNotifications && (
-                    <div className="notification-panel" style={{ position: 'absolute', right: 0, top: '40px', width: 360, maxHeight: 420, overflowY: 'auto', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 12, boxShadow: 'var(--shadow-lg)', zIndex: 40 }}>
+                    <div style={{ position: 'absolute', right: 0, top: '40px', width: 360, maxHeight: 420, overflowY: 'auto', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 12, boxShadow: 'var(--shadow-lg)', zIndex: 40 }}>
                       <div style={{ padding: 12, borderBottom: '1px solid var(--border-color)' }}><strong>Notifications</strong></div>
                       {notifications.length === 0 && <div style={{ padding: 14, color: 'var(--text-muted)' }}>No notifications</div>}
                       {notifications.map(n => (
@@ -631,7 +629,6 @@ function App() {
                 {/* Logout Button */}
                 <button
                   onClick={handleLogout}
-                  className="header-icon-button"
                   style={{
                     background: 'transparent',
                     border: 'none',
@@ -677,7 +674,7 @@ function App() {
 
       {/* Main Content Router */}
       <main className={token && screen === 'dashboard' ? 'app-main' : ''} style={{ flexGrow: 1 }}>
-        <div key={`${screen}-${screen === 'dashboard' ? dashboardView : ''}`} className={`${token && screen === 'dashboard' ? 'dashboard-page ' : ''}screen-transition`}>
+        <div className={token && screen === 'dashboard' ? 'dashboard-page' : ''}>
           {screen === 'landing' && <LandingScreen onNavigate={handleNavigate} />}
 
           {(screen === 'login' || screen === 'register') && (
