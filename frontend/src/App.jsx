@@ -45,7 +45,6 @@ function App() {
   const [dashboardView, setDashboardView] = useState('overview');
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
-  const [notificationRinging, setNotificationRinging] = useState(false);
   const [appVoiceEnabled, setAppVoiceEnabled] = useState((Boolean(localStorage.getItem('token')) && localStorage.getItem('userRole') === 'PATIENT') || localStorage.getItem('voiceMode') === 'true');
   const appVoiceRecognitionRef = useRef(null);
   const appVoiceSpeakingRef = useRef(false);
@@ -180,14 +179,14 @@ function App() {
     }
   }, []);
 
-  const fetchNotifications = useCallback(async () => {
+  const fetchNotifications = async () => {
     try {
       const res = await axios.get('/api/notifications');
       setNotifications(res.data || []);
     } catch (err) {
       console.error('Failed to fetch notifications:', err);
     }
-  }, []);
+  };
 
   const toggleNotifications = async () => {
     const next = !showNotifications;
@@ -247,52 +246,6 @@ function App() {
       console.warn('App voice prompt failed:', e);
     }
   }, []);
-
-  const playNotificationChime = useCallback(() => {
-    try {
-      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-      if (!AudioContextClass) return;
-      const audioContext = new AudioContextClass();
-      const gain = audioContext.createGain();
-      gain.connect(audioContext.destination);
-      gain.gain.setValueAtTime(0.0001, audioContext.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.12, audioContext.currentTime + 0.015);
-      gain.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + 0.72);
-
-      [880, 1174.66].forEach((frequency, index) => {
-        const oscillator = audioContext.createOscillator();
-        oscillator.type = 'sine';
-        oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime + index * 0.12);
-        oscillator.connect(gain);
-        oscillator.start(audioContext.currentTime + index * 0.12);
-        oscillator.stop(audioContext.currentTime + 0.62);
-      });
-
-      window.setTimeout(() => audioContext.close(), 900);
-    } catch (error) {
-      console.debug('Notification chime unavailable:', error);
-    }
-  }, []);
-
-  const handleSessionSavedNotification = useCallback(async () => {
-    // The session endpoint creates the notification before returning, so this
-    // refresh makes the bell badge update as soon as the session is saved.
-    await fetchNotifications();
-    setNotificationRinging(false);
-    window.requestAnimationFrame(() => setNotificationRinging(true));
-    window.setTimeout(() => setNotificationRinging(false), 1500);
-    playNotificationChime();
-  }, [fetchNotifications, playNotificationChime]);
-
-  useEffect(() => {
-    if (!token || !user) {
-      setNotifications([]);
-      return undefined;
-    }
-
-    fetchNotifications();
-    return undefined;
-  }, [fetchNotifications, token, user]);
 
   const explainAppVoiceScript = useCallback(() => {
     speakApp(
@@ -603,7 +556,7 @@ function App() {
                 <div style={{ position: 'relative' }}>
                   <button
                     type="button"
-                  className={`header-icon-button notification-toggle-button ${notificationRinging ? 'notification-ringing' : ''}`}
+                    className="header-icon-button notification-toggle-button"
                     onClick={toggleNotifications}
                     style={{
                       background: 'transparent',
@@ -622,7 +575,7 @@ function App() {
                       <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
                     </svg>
                     {notifications.filter(n => !n.is_read).length > 0 && (
-                      <span className="notification-badge" style={{
+                      <span style={{
                         position: 'absolute',
                         top: '6px',
                         right: '6px',
@@ -794,8 +747,6 @@ function App() {
               user={user}
               profile={profile}
               onNavigate={handleNavigate}
-              onExitTherapy={handleExitTherapy}
-              onSessionSaved={handleSessionSavedNotification}
             />
           )}
         </div>

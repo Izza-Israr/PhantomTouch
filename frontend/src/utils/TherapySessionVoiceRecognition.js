@@ -62,7 +62,7 @@ export const THERAPY_VOICE_SCRIPTS = {
 
     SESSION_ENDING: `Ending session. Please wait while your performance is being saved...`,
 
-    SESSION_SAVED: `Session saved successfully. A new notification is available in your notification bell. Thank you for your therapy.`,
+    SESSION_SAVED: `Session saved successfully. Thank you for your therapy.`,
 
     VOICE_ERROR: `Sorry, I did not understand that. Please try again.`,
 

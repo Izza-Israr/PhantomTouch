@@ -620,43 +620,6 @@ label {
   transform: translateY(0) scale(0.995);
 }
 
-:root[data-theme='dark'] .clinical-dashboard .glass-panel:hover,
-:root[data-theme='dark'] .clinical-dashboard .metric-tile:hover,
-:root[data-theme='dark'] .clinical-dashboard .circular-metric-card:hover,
-:root[data-theme='dark'] .clinical-dashboard .horizontal-metric-tile:hover,
-:root[data-theme='dark'] .clinical-dashboard .patient-grid-card:hover,
-:root[data-theme='dark'] .clinical-dashboard .dashboard-prescription-card:hover,
-:root[data-theme='dark'] .clinical-dashboard .practice-mode-card:hover,
-:root[data-theme='dark'] .clinical-dashboard .session-summary:hover {
-  border-color: rgba(34, 211, 238, 0.7) !important;
-  box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.24), 0 16px 34px -18px rgba(34, 211, 238, 0.72), var(--shadow-premium);
-}
-
-.notification-badge {
-  box-shadow: 0 0 0 0 var(--accent-cyan-glow);
-  animation: notificationBadgePulse 1.7s ease-out infinite;
-}
-
-.notification-ringing {
-  color: var(--accent-cyan) !important;
-}
-
-.notification-ringing svg {
-  transform-origin: 50% 12%;
-  animation: notificationBellRing 1.05s ease-in-out both;
-}
-
-@keyframes notificationBellRing {
-  0%, 100% { transform: rotate(0); }
-  12%, 36%, 60%, 84% { transform: rotate(13deg); }
-  24%, 48%, 72% { transform: rotate(-13deg); }
-}
-
-@keyframes notificationBadgePulse {
-  70% { box-shadow: 0 0 0 6px transparent; }
-  100% { box-shadow: 0 0 0 0 transparent; }
-}
-
 /* Digital Mirror canvas: a softly lit 3D grid and reflected signal rings. */
 .dashboard-hero-surface {
   position: relative;
