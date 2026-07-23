@@ -53,6 +53,7 @@ function App() {
   const appVoiceLastCommandAtRef = useRef(0);
   const appVoiceWelcomeSpokenRef = useRef(false);
   const appVoiceNavigationPausedRef = useRef(false);
+  const therapyRouteLockRef = useRef(false);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -215,12 +216,21 @@ function App() {
       setScreen('landing');
       return;
     }
-    // Set this synchronously. It protects the therapy route from a final queued
-    // result emitted by the app-wide speech recognizer while React mounts it.
+    if (targetScreen === 'dashboard' && therapyRouteLockRef.current) return;
+    // Set these synchronously so no ordinary dashboard navigation can replace
+    // the active camera/mirror view while it is mounting or running.
+    therapyRouteLockRef.current = targetScreen === 'game';
     appVoiceNavigationPausedRef.current = targetScreen === 'game';
     setScreen(targetScreen);
     if (targetScreen === 'dashboard') setDashboardView('overview');
   }, [token]);
+
+  const handleExitTherapy = useCallback(() => {
+    therapyRouteLockRef.current = false;
+    appVoiceNavigationPausedRef.current = false;
+    setDashboardView('overview');
+    setScreen('dashboard');
+  }, []);
 
   const speakApp = useCallback((text) => {
     try {
@@ -784,6 +794,7 @@ function App() {
               user={user}
               profile={profile}
               onNavigate={handleNavigate}
+              onExitTherapy={handleExitTherapy}
               onSessionSaved={handleSessionSavedNotification}
             />
           )}

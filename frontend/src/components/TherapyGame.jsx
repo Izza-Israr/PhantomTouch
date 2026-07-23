@@ -154,7 +154,7 @@ function burstParticles(scene, pos, toneHex, particlesRef) {
   }
 }
 
-export const TherapyGame = ({ profile, onNavigate, onSessionSaved }) => {
+export const TherapyGame = ({ profile, onNavigate, onExitTherapy, onSessionSaved }) => {
   const [gameState, setGameState] = useState('ready');
   const [practiceMode, setPracticeMode] = useState(() => {
     const savedMode = sessionStorage.getItem('phantomtouchPracticeMode');
@@ -1323,7 +1323,7 @@ export const TherapyGame = ({ profile, onNavigate, onSessionSaved }) => {
             </div>
           </div>
           <div className="session-actions">
-            <button className="btn btn-secondary" onClick={() => onNavigate('dashboard')}>
+            <button className="btn btn-secondary" onClick={onExitTherapy || (() => onNavigate('dashboard'))}>
               Go to Dashboard
             </button>
             <button className="btn btn-primary"
